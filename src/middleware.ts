@@ -7,11 +7,11 @@ export default withAuth(
     const path = req.nextUrl.pathname;
 
     if (path.startsWith("/admin") && token?.role !== "ADMIN") {
-      return NextResponse.redirect(new URL("/courier", req.url));
+      return NextResponse.redirect(new URL("/login", req.url));
     }
 
     if (path.startsWith("/courier") && token?.role !== "COURIER") {
-      return NextResponse.redirect(new URL("/admin", req.url));
+      return NextResponse.redirect(new URL("/login", req.url));
     }
 
     return NextResponse.next();
@@ -21,7 +21,7 @@ export default withAuth(
       authorized: ({ token, req }) => {
         const path = req.nextUrl.pathname;
         if (path.startsWith("/login") || path.startsWith("/qr")) return true;
-        if (path.startsWith("/api/auth")) return true;
+        if (path.startsWith("/api/auth") || path.startsWith("/api/health")) return true;
         return !!token;
       },
     },
