@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  COURIER
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum CourierStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum OrderStatus {
+  NEW
+  ASSIGNED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+enum MovementType {
+  TRANSFER_TO_COURIER
+  ORDER_SALE
+  ORDER_RETURN
+  ADJUSTMENT
+}
+
+model User {
+  id            String    @id @default(cuid())
+  login         String    @unique
+  passwordHash  String
+  role          Role
+  name          String
+  phone         String?
+  telegram      String?
+  courierStatus CourierStatus @default(ACTIVE)
+  isOnline      Boolean   @default(false)
+  lastSeenAt    DateTime?
+  qrToken       String?   @unique
+  telegramChatId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  courierOrders Order[]   @relation("CourierOrders")
+  stockItems    CourierStock[]
+  movementsFrom StockMovement[] @relation("MovementFrom")
+  movementsTo   StockMovement[] @relation("MovementTo")
+  locations     CourierLocation[]
+
+  @@index([phone])
+  @@index([telegram])
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  name        String
+  category    String
+  purchasePrice Decimal     @db.Decimal(12, 2)
+  salePrice   Decimal       @db.Decimal(12, 2)
+  centralStock Int          @default(0)
+  imageUrl    String?
+  status      ProductStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  courierStock CourierStock[]
+  orderItems   OrderItem[]
+  movements    StockMovement[]
+
+  @@index([name])
+  @@index([category])
+  @@index([status])
+}
+
+model CourierStock {
+  id        String   @id @default(cuid())
+  courierId String
+  productId String
+  quantity  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  courier User    @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([courierId, productId])
+  @@index([courierId])
+}
+
+model StockMovement {
+  id          String       @id @default(cuid())
+  type        MovementType
+  productId   String
+  quantity    Int
+  fromCourierId String?
+  toCourierId   String?
+  orderId     String?
+  note        String?
+  createdAt   DateTime     @default(now())
+
+  product     Product @relation(fields: [productId], references: [id])
+  fromCourier User?   @relation("MovementFrom", fields: [fromCourierId], references: [id])
+  toCourier   User?   @relation("MovementTo", fields: [toCourierId], references: [id])
+  order       Order?  @relation(fields: [orderId], references: [id])
+
+  @@index([productId])
+  @@index([createdAt])
+  @@index([type])
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  orderNumber  Int         @unique @default(autoincrement())
+  clientName   String
+  clientPhone  String
+  address      String
+  comment      String?
+  status       OrderStatus @default(NEW)
+  totalAmount  Decimal     @db.Decimal(12, 2) @default(0)
+  courierId    String?
+  completedAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  courier  User?       @relation("CourierOrders", fields: [courierId], references: [id])
+  items    OrderItem[]
+  movements StockMovement[]
+
+  @@index([status])
+  @@index([courierId])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  salePrice Decimal @db.Decimal(12, 2)
+  purchasePrice Decimal @db.Decimal(12, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+}
+
+model CourierLocation {
+  id        String   @id @default(cuid())
+  courierId String
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+  createdAt DateTime @default(now())
+
+  courier User @relation(fields: [courierId], references: [id], onDelete: Cascade)
+
+  @@index([courierId, createdAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, endpoint])
+  @@index([userId])
+}
