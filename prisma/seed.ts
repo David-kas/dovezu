@@ -55,7 +55,7 @@ async function main() {
   }
 
   console.log("Seed completed:");
-  console.log(`  Admin: login=admin, password=admin1234 (id: ${admin.id})`);
+  console.log(`  Admin: login=admin, password=admin123 (id: ${admin.id})`);
   console.log(`  Courier: login=courier1 / phone=+79001234567 / @ivan_courier, password=courier123 (id: ${courier.id})`);
 }
 
