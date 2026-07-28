@@ -43,5 +43,7 @@ export const config = {
     "/api/push/:path*",
     "/api/dashboard/:path*",
     "/api/courier-stock/:path*",
+    "/api/returns/:path*",
+    "/api/audit-log/:path*",
   ],
 };

@@ -51,8 +51,25 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   TRANSFER_TO_COURIER: "Передача курьеру",
   ORDER_SALE: "Продажа по заказу",
   ORDER_RETURN: "Возврат по заказу",
+  RETURN_TO_CENTRAL: "Возврат на склад",
   ADJUSTMENT: "Корректировка",
 };
+
+export const AUDIT_ACTION_LABELS: Record<string, string> = {
+  RETURN_STOCK: "Возврат товара",
+  RETURN_ALL_STOCK: "Возврат всех товаров",
+  CLEAR_MOVEMENT_HISTORY: "Очистка истории",
+};
+
+export function movementDestinationLabel(
+  type: string,
+  toCourier?: { name: string } | null
+): string {
+  if (toCourier?.name) return toCourier.name;
+  if (type === "RETURN_TO_CENTRAL") return "Центральный склад";
+  if (type === "ORDER_SALE") return "Клиент";
+  return "—";
+}
 
 export function decimalToNumber(value: { toNumber?: () => number } | number | string): number {
   if (typeof value === "number") return value;

@@ -42,6 +42,9 @@ export async function PUT(
     data: {
       name: data.name,
       category: data.category,
+      article: data.article || null,
+      sku: data.sku || null,
+      barcode: data.barcode || null,
       purchasePrice: data.purchasePrice,
       salePrice: data.salePrice,
       centralStock: data.centralStock,

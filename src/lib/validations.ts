@@ -13,6 +13,9 @@ export const courierLoginSchema = z.object({
 export const productSchema = z.object({
   name: z.string().min(1, "Введите наименование"),
   category: z.string().min(1, "Введите категорию"),
+  article: z.string().optional().or(z.literal("")),
+  sku: z.string().optional().or(z.literal("")),
+  barcode: z.string().optional().or(z.literal("")),
   purchasePrice: z.coerce.number().min(0, "Цена не может быть отрицательной"),
   salePrice: z.coerce.number().min(0, "Цена не может быть отрицательной"),
   centralStock: z.coerce.number().int().min(0).default(0),
@@ -70,4 +73,19 @@ export const pushSubscriptionSchema = z.object({
     p256dh: z.string(),
     auth: z.string(),
   }),
+});
+
+export const returnItemSchema = z.object({
+  productId: z.string().min(1),
+  quantity: z.coerce.number().int().min(1, "Минимум 1"),
+});
+
+export const returnStockSchema = z.object({
+  courierId: z.string().min(1),
+  returnAll: z.boolean().optional().default(false),
+  items: z.array(returnItemSchema).optional(),
+});
+
+export const clearHistorySchema = z.object({
+  productId: z.string().min(1),
 });

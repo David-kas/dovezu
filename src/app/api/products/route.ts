@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, jsonError, jsonSuccess } from "@/lib/api-auth";
+import { buildProductSearchWhere } from "@/lib/product-search";
 import { productSchema } from "@/lib/validations";
 
 export async function GET(req: NextRequest) {
@@ -11,17 +12,19 @@ export async function GET(req: NextRequest) {
   const search = searchParams.get("search") || "";
   const category = searchParams.get("category") || "";
   const status = searchParams.get("status") || "";
+  const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10), 200);
 
   const products = await prisma.product.findMany({
     where: {
       AND: [
-        search ? { name: { contains: search, mode: "insensitive" } } : {},
+        search ? buildProductSearchWhere(search) : {},
         category ? { category: { equals: category, mode: "insensitive" } } : {},
         status ? { status: status as "ACTIVE" | "INACTIVE" | "ARCHIVED" } : {},
         user!.role === "COURIER" ? { status: "ACTIVE" } : {},
       ],
     },
     orderBy: { name: "asc" },
+    take: limit,
   });
 
   const mapped = products.map((p) => ({
@@ -49,6 +52,9 @@ export async function POST(req: NextRequest) {
     data: {
       name: data.name,
       category: data.category,
+      article: data.article || null,
+      sku: data.sku || null,
+      barcode: data.barcode || null,
       purchasePrice: data.purchasePrice,
       salePrice: data.salePrice,
       centralStock: data.centralStock,

@@ -3,14 +3,21 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, jsonError, jsonSuccess } from "@/lib/api-auth";
 import { decimalToNumber } from "@/lib/utils";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { error, user } = await requireAuth(["ADMIN", "COURIER"]);
   if (error) return error;
 
-  const courierId = user!.role === "COURIER" ? user!.id : undefined;
+  const { searchParams } = new URL(req.url);
+  const filterCourierId = searchParams.get("courierId");
+
+  const courierId =
+    user!.role === "COURIER" ? user!.id : filterCourierId ?? undefined;
 
   const stock = await prisma.courierStock.findMany({
-    where: courierId ? { courierId, quantity: { gt: 0 } } : { quantity: { gt: 0 } },
+    where: {
+      ...(courierId ? { courierId } : {}),
+      quantity: { gt: 0 },
+    },
     include: {
       product: true,
       courier: user!.role === "ADMIN" ? { select: { id: true, name: true } } : false,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Download } from "lucide-react";
+import { Plus, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,9 +24,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate, ORDER_STATUS_LABELS } from "@/lib/utils";
+import { ProductSearchPicker, type SearchProduct } from "@/components/admin/product-search-picker";
 
-interface Product { id: string; name: string; salePrice: number; centralStock: number }
 interface Courier { id: string; name: string; courierStatus: string }
+interface OrderItemEntry {
+  productId: string;
+  productName: string;
+  quantity: number;
+  salePrice: number;
+}
 interface OrderItem {
   id: string;
   quantity: number;
@@ -58,7 +64,6 @@ function statusVariant(status: string) {
 
 export function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -69,9 +74,7 @@ export function OrdersPage() {
     comment: "",
     courierId: "",
   });
-  const [orderItems, setOrderItems] = useState<{ productId: string; quantity: number }[]>([
-    { productId: "", quantity: 1 },
-  ]);
+  const [orderItems, setOrderItems] = useState<OrderItemEntry[]>([]);
 
   async function loadOrders() {
     const params = statusFilter ? `?status=${statusFilter}` : "";
@@ -81,19 +84,53 @@ export function OrdersPage() {
 
   useEffect(() => {
     loadOrders();
-    fetch("/api/products?status=ACTIVE").then((r) => r.json()).then(setProducts);
     fetch("/api/couriers").then((r) => r.json()).then((data) =>
       setCouriers(data.filter((c: Courier) => c.courierStatus === "ACTIVE"))
     );
   }, [statusFilter]);
 
+  function handleProductSelect(product: SearchProduct) {
+    setOrderItems((prev) => {
+      const existing = prev.find((i) => i.productId === product.id);
+      if (existing) {
+        return prev.map((i) =>
+          i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          productName: product.name,
+          quantity: 1,
+          salePrice: product.salePrice,
+        },
+      ];
+    });
+  }
+
+  function updateItemQuantity(productId: string, quantity: number) {
+    if (quantity < 1) {
+      setOrderItems((prev) => prev.filter((i) => i.productId !== productId));
+      return;
+    }
+    setOrderItems((prev) =>
+      prev.map((i) => (i.productId === productId ? { ...i, quantity } : i))
+    );
+  }
+
+  function removeItem(productId: string) {
+    setOrderItems((prev) => prev.filter((i) => i.productId !== productId));
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const items = orderItems.filter((i) => i.productId && i.quantity > 0);
-    if (items.length === 0) {
+    if (orderItems.length === 0) {
       toast({ title: "Добавьте товары", variant: "destructive" });
       return;
     }
+
+    const items = orderItems.map(({ productId, quantity }) => ({ productId, quantity }));
 
     const res = await fetch("/api/orders", {
       method: "POST",
@@ -114,7 +151,7 @@ export function OrdersPage() {
     toast({ title: "Заказ создан" });
     setDialogOpen(false);
     setForm({ clientName: "", clientPhone: "", address: "", comment: "", courierId: "" });
-    setOrderItems([{ productId: "", quantity: 1 }]);
+    setOrderItems([]);
     loadOrders();
   }
 
@@ -189,28 +226,42 @@ export function OrdersPage() {
                 </div>
                 <div className="space-y-3">
                   <Label>Товары</Label>
-                  {orderItems.map((item, idx) => (
-                    <div key={idx} className="flex gap-2">
-                      <Select value={item.productId} onValueChange={(v) => {
-                        const updated = [...orderItems];
-                        updated[idx].productId = v;
-                        setOrderItems(updated);
-                      }}>
-                        <SelectTrigger className="flex-1"><SelectValue placeholder="Товар" /></SelectTrigger>
-                        <SelectContent>
-                          {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                      <Input type="number" min="1" className="w-20" value={item.quantity} onChange={(e) => {
-                        const updated = [...orderItems];
-                        updated[idx].quantity = +e.target.value;
-                        setOrderItems(updated);
-                      }} />
+                  <ProductSearchPicker
+                    onSelect={handleProductSelect}
+                    autoFocus={dialogOpen}
+                  />
+                  {orderItems.length > 0 && (
+                    <div className="space-y-2 rounded-lg border p-3">
+                      <p className="text-xs font-medium text-muted-foreground">Добавлено в заказ</p>
+                      {orderItems.map((item) => (
+                        <div key={item.productId} className="flex items-center gap-2">
+                          <span className="flex-1 truncate text-sm">{item.productName}</span>
+                          <Input
+                            type="number"
+                            min="1"
+                            className="w-20 h-8"
+                            value={item.quantity}
+                            onChange={(e) => updateItemQuantity(item.productId, +e.target.value)}
+                          />
+                          <span className="text-sm text-muted-foreground w-20 text-right">
+                            {formatCurrency(item.salePrice * item.quantity)}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => removeItem(item.productId)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      <div className="border-t pt-2 text-sm font-semibold text-right">
+                        Итого: {formatCurrency(orderItems.reduce((s, i) => s + i.salePrice * i.quantity, 0))}
+                      </div>
                     </div>
-                  ))}
-                  <Button type="button" variant="outline" size="sm" onClick={() => setOrderItems([...orderItems, { productId: "", quantity: 1 }])}>
-                    + Товар
-                  </Button>
+                  )}
                 </div>
                 <Button type="submit" className="w-full">Создать заказ</Button>
               </form>

@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
 
   if (type === "movements") {
     const movements = await prisma.stockMovement.findMany({
+      where: { deletedAt: null },
       include: {
         product: true,
         fromCourier: { select: { name: true } },
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
       Товар: m.product.name,
       Количество: m.quantity,
       От: m.fromCourier?.name || "Центральный склад",
-      К: m.toCourier?.name || "—",
+      К: m.toCourier?.name || "Центральный склад",
       Заказ: m.order ? `#${m.order.orderNumber}` : "—",
       Примечание: m.note || "",
     }));

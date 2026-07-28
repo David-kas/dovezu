@@ -12,7 +12,10 @@ export async function GET(req: NextRequest) {
   const courierId = searchParams.get("courierId");
 
   const movements = await prisma.stockMovement.findMany({
-    where: courierId ? { type: "TRANSFER_TO_COURIER", toCourierId: courierId } : { type: "TRANSFER_TO_COURIER" },
+    where: {
+      deletedAt: null,
+      ...(courierId ? { type: "TRANSFER_TO_COURIER", toCourierId: courierId } : { type: "TRANSFER_TO_COURIER" }),
+    },
     include: {
       product: true,
       toCourier: { select: { id: true, name: true } },
@@ -25,7 +28,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { error } = await requireAuth(["ADMIN"]);
+  const { error, user } = await requireAuth(["ADMIN"]);
   if (error) return error;
 
   const body = await req.json();
@@ -39,7 +42,8 @@ export async function POST(req: NextRequest) {
       parsed.data.courierId,
       parsed.data.productId,
       parsed.data.quantity,
-      parsed.data.note
+      parsed.data.note,
+      user!.id
     );
     return jsonSuccess(movement, 201);
   } catch (e) {

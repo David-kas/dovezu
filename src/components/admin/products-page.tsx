@@ -28,6 +28,9 @@ interface Product {
   id: string;
   name: string;
   category: string;
+  article?: string | null;
+  sku?: string | null;
+  barcode?: string | null;
   purchasePrice: number;
   salePrice: number;
   centralStock: number;
@@ -38,6 +41,9 @@ interface Product {
 const emptyProduct = {
   name: "",
   category: "",
+  article: "",
+  sku: "",
+  barcode: "",
   purchasePrice: 0,
   salePrice: 0,
   centralStock: 0,
@@ -87,6 +93,9 @@ export function ProductsPage() {
     setForm({
       name: product.name,
       category: product.category,
+      article: product.article || "",
+      sku: product.sku || "",
+      barcode: product.barcode || "",
       purchasePrice: product.purchasePrice,
       salePrice: product.salePrice,
       centralStock: product.centralStock,
@@ -158,6 +167,20 @@ export function ProductsPage() {
                 <div className="space-y-2">
                   <Label>Категория</Label>
                   <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label>Артикул</Label>
+                    <Input value={form.article} onChange={(e) => setForm({ ...form, article: e.target.value })} placeholder="ART-001" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>SKU</Label>
+                    <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="SKU-001" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Штрихкод</Label>
+                    <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="460..." />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">

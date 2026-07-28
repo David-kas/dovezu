@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Plus, Pencil, Trash2, Ban, CheckCircle, QrCode, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, Ban, CheckCircle, QrCode, RefreshCw, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { formatDateShort } from "@/lib/utils";
+import { CourierStockDialog } from "@/components/admin/courier-stock-dialog";
 
 interface Courier {
   id: string;
@@ -48,6 +49,8 @@ export function CouriersPage() {
   const [selectedCourier, setSelectedCourier] = useState<Courier | null>(null);
   const [editing, setEditing] = useState<Courier | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [stockCourier, setStockCourier] = useState<Courier | null>(null);
+  const [stockDialogOpen, setStockDialogOpen] = useState(false);
 
   async function loadCouriers() {
     const res = await fetch("/api/couriers");
@@ -212,6 +215,17 @@ export function CouriersPage() {
                 <p className="text-muted-foreground">Рег: {formatDateShort(courier.createdAt)}</p>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setStockCourier(courier);
+                    setStockDialogOpen(true);
+                  }}
+                  title="Склад курьера"
+                >
+                  <Package className="h-4 w-4" />
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => openEdit(courier)}>
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -229,6 +243,12 @@ export function CouriersPage() {
           </Card>
         ))}
       </div>
+
+      <CourierStockDialog
+        courier={stockCourier}
+        open={stockDialogOpen}
+        onOpenChange={setStockDialogOpen}
+      />
 
       <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
         <DialogContent className="text-center">
