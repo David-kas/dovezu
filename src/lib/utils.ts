@@ -53,6 +53,13 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   ORDER_RETURN: "Возврат по заказу",
   RETURN_TO_CENTRAL: "Возврат на склад",
   ADJUSTMENT: "Корректировка",
+  DOCUMENT_RECEIPT: "Оприходование",
+  DOCUMENT_TRANSFER: "Перемещение",
+  DOCUMENT_RETURN: "Возврат",
+  DOCUMENT_WRITE_OFF: "Списание",
+  DOCUMENT_SALE: "Продажа",
+  DOCUMENT_INVENTORY: "Инвентаризация",
+  DOCUMENT_ADJUSTMENT: "Корректировка (док.)",
 };
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
@@ -66,8 +73,9 @@ export function movementDestinationLabel(
   toCourier?: { name: string } | null
 ): string {
   if (toCourier?.name) return toCourier.name;
-  if (type === "RETURN_TO_CENTRAL") return "Центральный склад";
-  if (type === "ORDER_SALE") return "Клиент";
+  if (type === "RETURN_TO_CENTRAL" || type === "DOCUMENT_RETURN") return "Центральный склад";
+  if (type === "ORDER_SALE" || type === "DOCUMENT_SALE") return "Клиент";
+  if (type === "DOCUMENT_TRANSFER") return toCourier?.name ?? "Курьер";
   return "—";
 }
 

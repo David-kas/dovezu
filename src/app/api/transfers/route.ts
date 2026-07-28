@@ -4,6 +4,8 @@ import { requireAuth, jsonError, jsonSuccess } from "@/lib/api-auth";
 import { transferSchema } from "@/lib/validations";
 import { transferToCourier } from "@/lib/orders";
 
+const TRANSFER_TYPES = ["TRANSFER_TO_COURIER", "DOCUMENT_TRANSFER"] as const;
+
 export async function GET(req: NextRequest) {
   const { error } = await requireAuth(["ADMIN"]);
   if (error) return error;
@@ -14,17 +16,29 @@ export async function GET(req: NextRequest) {
   const movements = await prisma.stockMovement.findMany({
     where: {
       deletedAt: null,
-      ...(courierId ? { type: "TRANSFER_TO_COURIER", toCourierId: courierId } : { type: "TRANSFER_TO_COURIER" }),
+      type: { in: [...TRANSFER_TYPES] },
+      ...(courierId
+        ? {
+            OR: [{ toCourierId: courierId }, { warehouse: { courierId } }],
+          }
+        : {}),
     },
     include: {
       product: true,
       toCourier: { select: { id: true, name: true } },
+      warehouse: { include: { courier: { select: { id: true, name: true } } } },
+      document: { select: { number: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
 
-  return jsonSuccess(movements);
+  const mapped = movements.map((m) => ({
+    ...m,
+    toCourier: m.toCourier ?? m.warehouse?.courier ?? null,
+  }));
+
+  return jsonSuccess(mapped);
 }
 
 export async function POST(req: NextRequest) {

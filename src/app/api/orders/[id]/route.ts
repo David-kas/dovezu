@@ -117,7 +117,11 @@ export async function PATCH(
 
     if (statusParsed.data === "COMPLETED") {
       try {
-        const order = await completeOrder(id, user!.role === "COURIER" ? user!.id : undefined);
+        const order = await completeOrder(id, {
+          id: user!.id,
+          role: user!.role as "ADMIN" | "COURIER",
+          courierId: user!.role === "COURIER" ? user!.id : undefined,
+        });
         return jsonSuccess(order);
       } catch (e) {
         return jsonError(e instanceof Error ? e.message : "Complete failed");

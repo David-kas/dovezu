@@ -8,6 +8,13 @@ const MOVEMENT_TYPES = [
   "ORDER_RETURN",
   "RETURN_TO_CENTRAL",
   "ADJUSTMENT",
+  "DOCUMENT_RECEIPT",
+  "DOCUMENT_TRANSFER",
+  "DOCUMENT_RETURN",
+  "DOCUMENT_WRITE_OFF",
+  "DOCUMENT_SALE",
+  "DOCUMENT_INVENTORY",
+  "DOCUMENT_ADJUSTMENT",
 ] as const;
 
 export async function GET(req: NextRequest) {
@@ -27,7 +34,15 @@ export async function GET(req: NextRequest) {
         ? { type: type as (typeof MOVEMENT_TYPES)[number] }
         : {}),
       ...(productId ? { productId } : {}),
-      ...(courierId ? { OR: [{ fromCourierId: courierId }, { toCourierId: courierId }] } : {}),
+      ...(courierId
+        ? {
+            OR: [
+              { fromCourierId: courierId },
+              { toCourierId: courierId },
+              { warehouse: { courierId } },
+            ],
+          }
+        : {}),
       ...(!includeDeleted ? { deletedAt: null } : {}),
     },
     include: {
@@ -35,11 +50,19 @@ export async function GET(req: NextRequest) {
       fromCourier: { select: { id: true, name: true } },
       toCourier: { select: { id: true, name: true } },
       order: { select: { id: true, orderNumber: true } },
+      document: { select: { id: true, number: true, type: true } },
+      warehouse: { include: { courier: { select: { id: true, name: true } } } },
       createdBy: { select: { id: true, name: true } },
     },
     orderBy: { createdAt: "desc" },
     take: limit,
   });
 
-  return jsonSuccess(movements);
+  const mapped = movements.map((m) => ({
+    ...m,
+    toCourier: m.toCourier ?? m.warehouse?.courier ?? null,
+    fromCourier: m.fromCourier ?? null,
+  }));
+
+  return jsonSuccess(mapped);
 }

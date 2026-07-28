@@ -68,7 +68,18 @@ export async function postDocument(
   postedByRole: Role,
   meta?: { ipAddress?: string; userAgent?: string; discrepancyReason?: string }
 ) {
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) =>
+    postDocumentInTransaction(tx, documentId, postedById, postedByRole, meta)
+  );
+}
+
+export async function postDocumentInTransaction(
+  tx: Prisma.TransactionClient,
+  documentId: string,
+  postedById: string,
+  postedByRole: Role,
+  meta?: { ipAddress?: string; userAgent?: string; discrepancyReason?: string }
+) {
     const doc = await getDocumentForPosting(documentId, tx);
     validateLines(doc.lines, doc.type);
 
@@ -88,6 +99,18 @@ export async function postDocument(
 
     if (doc.type === "INVENTORY" && !doc.toWarehouseId) {
       throw new Error("Не указан склад инвентаризации");
+    }
+
+    if (doc.type === "TRANSFER" && (!doc.fromWarehouseId || !doc.toWarehouseId)) {
+      throw new Error("Укажите склад-источник и склад-получатель");
+    }
+
+    if (doc.type === "RETURN" && (!doc.fromWarehouseId || !doc.toWarehouseId)) {
+      throw new Error("Укажите склад-источник и склад-получатель");
+    }
+
+    if ((doc.type === "SALE" || doc.type === "WRITE_OFF") && !doc.fromWarehouseId) {
+      throw new Error("Не указан склад списания");
     }
 
     const movementType = DOC_TO_MOVEMENT[doc.type];
@@ -133,15 +156,13 @@ export async function postDocument(
           break;
         }
         case "TRANSFER": {
-          if (!doc.fromWarehouseId || !doc.toWarehouseId) {
-            throw new Error("Укажите склад-источник и склад-получатель");
-          }
-          const available = await getStockQuantity(doc.fromWarehouseId, productId, tx);
-          if (available < qty) throw new Error(`Недостаточно «${productId}» на складе-источнике`);
+          const available = await getStockQuantity(doc.fromWarehouseId!, productId, tx);
+          if (available < qty) throw new Error(`Недостаточно товара на складе-источнике`);
 
-          await applyStockDelta(doc.fromWarehouseId, productId, -qty, tx);
-          await applyStockDelta(doc.toWarehouseId, productId, qty, tx);
+          await applyStockDelta(doc.fromWarehouseId!, productId, -qty, tx);
+          await applyStockDelta(doc.toWarehouseId!, productId, qty, tx);
 
+          const toWh = await tx.warehouse.findUnique({ where: { id: doc.toWarehouseId! } });
           await tx.stockMovement.create({
             data: {
               type: movementType,
@@ -149,6 +170,7 @@ export async function postDocument(
               quantity: qty,
               documentId: doc.id,
               warehouseId: doc.toWarehouseId,
+              toCourierId: toWh?.courierId,
               createdById: postedById,
               note: `Перемещение #${doc.number}`,
             },
@@ -156,11 +178,13 @@ export async function postDocument(
           break;
         }
         case "RETURN": {
-          if (!doc.fromWarehouseId || !doc.toWarehouseId) {
-            throw new Error("Укажите склад-источник и склад-получатель");
-          }
-          await applyStockDelta(doc.fromWarehouseId, productId, -qty, tx);
-          await applyStockDelta(doc.toWarehouseId, productId, qty, tx);
+          const available = await getStockQuantity(doc.fromWarehouseId!, productId, tx);
+          if (available < qty) throw new Error(`Недостаточно товара на складе-источнике`);
+
+          await applyStockDelta(doc.fromWarehouseId!, productId, -qty, tx);
+          await applyStockDelta(doc.toWarehouseId!, productId, qty, tx);
+
+          const fromWh = await tx.warehouse.findUnique({ where: { id: doc.fromWarehouseId! } });
           await tx.stockMovement.create({
             data: {
               type: movementType,
@@ -168,8 +192,33 @@ export async function postDocument(
               quantity: qty,
               documentId: doc.id,
               warehouseId: doc.toWarehouseId,
+              fromCourierId: fromWh?.courierId,
               createdById: postedById,
               note: `Возврат #${doc.number}`,
+            },
+          });
+          break;
+        }
+        case "SALE": {
+          const available = await getStockQuantity(doc.fromWarehouseId!, productId, tx);
+          if (available < qty) throw new Error("Недостаточно товара на складе курьера");
+
+          await applyStockDelta(doc.fromWarehouseId!, productId, -qty, tx);
+
+          const fromWh = await tx.warehouse.findUnique({ where: { id: doc.fromWarehouseId! } });
+          await tx.stockMovement.create({
+            data: {
+              type: movementType,
+              productId,
+              quantity: qty,
+              documentId: doc.id,
+              warehouseId: doc.fromWarehouseId,
+              orderId: doc.orderId,
+              fromCourierId: fromWh?.courierId,
+              createdById: postedById,
+              note: doc.orderId
+                ? `Продажа #${doc.number}`
+                : `Списание продажи #${doc.number}`,
             },
           });
           break;
@@ -273,7 +322,6 @@ export async function postDocument(
     });
 
     return updated;
-  });
 }
 
 export async function cancelDocument(
@@ -318,13 +366,16 @@ export async function cancelDocument(
           if (doc.toWarehouseId) {
             let delta = 0;
             try {
-              const meta = JSON.parse(line.receiptLineText ?? "{}");
-              delta = typeof meta.delta === "number" ? meta.delta : 0;
+              const lineMeta = JSON.parse(line.receiptLineText ?? "{}");
+              delta = typeof lineMeta.delta === "number" ? lineMeta.delta : 0;
             } catch {
               /* skip */
             }
             if (delta !== 0) await applyStockDelta(doc.toWarehouseId, productId, -delta, tx);
           }
+          break;
+        case "SALE":
+          if (doc.fromWarehouseId) await applyStockDelta(doc.fromWarehouseId, productId, qty, tx);
           break;
         default:
           break;

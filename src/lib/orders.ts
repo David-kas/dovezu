@@ -2,7 +2,13 @@ import { prisma } from "./prisma";
 import { notifyCourierAboutOrder } from "./telegram";
 import { sendPushToUser } from "./push";
 import { decimalToNumber } from "./utils";
-import type { Prisma } from "@prisma/client";
+import type { Role } from "@prisma/client";
+import {
+  transferToCourierViaDocument,
+  returnFromCourierViaDocument,
+  returnAllFromCourierViaDocument,
+  completeOrderViaDocument,
+} from "./services/legacy-stock.service";
 
 export async function assignOrderToCourier(orderId: string, courierId: string) {
   const order = await prisma.order.findUnique({
@@ -55,66 +61,11 @@ export async function assignOrderToCourier(orderId: string, courierId: string) {
   return updated;
 }
 
-export async function completeOrder(orderId: string, courierId?: string) {
-  return prisma.$transaction(async (tx) => {
-    const order = await tx.order.findUnique({
-      where: { id: orderId },
-      include: { items: true },
-    });
-
-    if (!order) throw new Error("Заказ не найден");
-    if (courierId && order.courierId !== courierId) {
-      throw new Error("Заказ не принадлежит этому курьеру");
-    }
-    if (order.status === "COMPLETED") throw new Error("Заказ уже выполнен");
-    if (order.status === "CANCELLED") throw new Error("Заказ отменён");
-
-    const effectiveCourierId = order.courierId;
-    if (!effectiveCourierId) throw new Error("Курьер не назначен");
-
-    for (const item of order.items) {
-      const stock = await tx.courierStock.findUnique({
-        where: {
-          courierId_productId: {
-            courierId: effectiveCourierId,
-            productId: item.productId,
-          },
-        },
-      });
-
-      if (!stock || stock.quantity < item.quantity) {
-        throw new Error(`Недостаточно товара на складе курьера`);
-      }
-
-      await tx.courierStock.update({
-        where: { id: stock.id },
-        data: { quantity: stock.quantity - item.quantity },
-      });
-
-      await tx.stockMovement.create({
-        data: {
-          type: "ORDER_SALE",
-          productId: item.productId,
-          quantity: item.quantity,
-          fromCourierId: effectiveCourierId,
-          orderId: order.id,
-          note: `Продажа по заказу #${order.orderNumber}`,
-        },
-      });
-    }
-
-    return tx.order.update({
-      where: { id: orderId },
-      data: {
-        status: "COMPLETED",
-        completedAt: new Date(),
-      },
-      include: {
-        items: { include: { product: true } },
-        courier: true,
-      },
-    });
-  });
+export async function completeOrder(
+  orderId: string,
+  actor: { id: string; role: Role; courierId?: string }
+) {
+  return completeOrderViaDocument(orderId, actor.id, actor.role, actor.courierId);
 }
 
 export async function transferToCourier(
@@ -124,93 +75,15 @@ export async function transferToCourier(
   note?: string,
   createdById?: string
 ) {
-  return prisma.$transaction(async (tx) => {
-    const product = await tx.product.findUnique({ where: { id: productId } });
-    if (!product) throw new Error("Товар не найден");
-    if (product.centralStock < quantity) {
-      throw new Error("Недостаточно товара на центральном складе");
-    }
-
-    const courier = await tx.user.findFirst({
-      where: { id: courierId, role: "COURIER", courierStatus: "ACTIVE" },
-    });
-    if (!courier) throw new Error("Курьер не найден или заблокирован");
-
-    await tx.product.update({
-      where: { id: productId },
-      data: { centralStock: product.centralStock - quantity },
-    });
-
-    await tx.courierStock.upsert({
-      where: {
-        courierId_productId: { courierId, productId },
-      },
-      create: { courierId, productId, quantity },
-      update: { quantity: { increment: quantity } },
-    });
-
-    const movement = await tx.stockMovement.create({
-      data: {
-        type: "TRANSFER_TO_COURIER",
-        productId,
-        quantity,
-        toCourierId: courierId,
-        note,
-        createdById: createdById ?? null,
-      },
-      include: {
-        product: true,
-        toCourier: { select: { id: true, name: true } },
-      },
-    });
-
-    return movement;
-  });
-}
-
-async function returnSingleItem(
-  tx: Prisma.TransactionClient,
-  courierId: string,
-  productId: string,
-  quantity: number,
-  createdById: string,
-  courierName: string
-) {
-  const stock = await tx.courierStock.findUnique({
-    where: { courierId_productId: { courierId, productId } },
-    include: { product: true },
-  });
-
-  if (!stock || stock.quantity < quantity) {
-    throw new Error(`Недостаточно товара «${stock?.product.name ?? productId}» у курьера`);
-  }
-
-  const newQty = stock.quantity - quantity;
-
-  if (newQty === 0) {
-    await tx.courierStock.delete({ where: { id: stock.id } });
-  } else {
-    await tx.courierStock.update({
-      where: { id: stock.id },
-      data: { quantity: newQty },
-    });
-  }
-
-  await tx.product.update({
-    where: { id: productId },
-    data: { centralStock: { increment: quantity } },
-  });
-
-  await tx.stockMovement.create({
-    data: {
-      type: "RETURN_TO_CENTRAL",
-      productId,
-      quantity,
-      fromCourierId: courierId,
-      note: `Возврат от курьера ${courierName} на центральный склад`,
-      createdById,
-    },
-  });
+  if (!createdById) throw new Error("createdById required");
+  return transferToCourierViaDocument(
+    courierId,
+    productId,
+    quantity,
+    note,
+    createdById,
+    "ADMIN"
+  );
 }
 
 export async function returnFromCourier(
@@ -218,55 +91,11 @@ export async function returnFromCourier(
   items: { productId: string; quantity: number }[],
   createdById: string
 ) {
-  return prisma.$transaction(async (tx) => {
-    const courier = await tx.user.findFirst({
-      where: { id: courierId, role: "COURIER" },
-    });
-    if (!courier) throw new Error("Курьер не найден");
-
-    for (const item of items) {
-      await returnSingleItem(
-        tx,
-        courierId,
-        item.productId,
-        item.quantity,
-        createdById,
-        courier.name
-      );
-    }
-
-    return { returned: items.length };
-  });
+  return returnFromCourierViaDocument(courierId, items, createdById, "ADMIN");
 }
 
 export async function returnAllFromCourier(courierId: string, createdById: string) {
-  return prisma.$transaction(async (tx) => {
-    const courier = await tx.user.findFirst({
-      where: { id: courierId, role: "COURIER" },
-    });
-    if (!courier) throw new Error("Курьер не найден");
-
-    const stockItems = await tx.courierStock.findMany({
-      where: { courierId, quantity: { gt: 0 } },
-    });
-
-    if (stockItems.length === 0) {
-      throw new Error("У данного курьера отсутствуют товары");
-    }
-
-    for (const stock of stockItems) {
-      await returnSingleItem(
-        tx,
-        courierId,
-        stock.productId,
-        stock.quantity,
-        createdById,
-        courier.name
-      );
-    }
-
-    return { returned: stockItems.length, totalQuantity: stockItems.reduce((s, i) => s + i.quantity, 0) };
-  });
+  return returnAllFromCourierViaDocument(courierId, createdById, "ADMIN");
 }
 
 export async function clearProductMovementHistory(productId: string) {
