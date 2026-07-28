@@ -16,6 +16,8 @@ import {
   Menu,
   X,
   Truck,
+  ClipboardList,
+  FileInput,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -25,12 +27,18 @@ import { useState } from "react";
 const adminNav = [
   { href: "/admin", label: "Дашборд", icon: LayoutDashboard },
   { href: "/admin/products", label: "Товары", icon: Package },
+  { href: "/admin/receipts", label: "Оприходования", icon: FileInput },
+  { href: "/admin/operator", label: "Очередь", icon: ClipboardList },
   { href: "/admin/couriers", label: "Курьеры", icon: Users },
   { href: "/admin/transfers", label: "Передача", icon: ArrowRightLeft },
   { href: "/admin/orders", label: "Заказы", icon: ShoppingCart },
   { href: "/admin/movements", label: "Движения", icon: History },
   { href: "/admin/analytics", label: "Аналитика", icon: BarChart3 },
   { href: "/admin/map", label: "Карта", icon: MapPin },
+];
+
+const purchaserNav = [
+  { href: "/purchaser", label: "Закупка", icon: ShoppingCart },
 ];
 
 const courierNav = [
@@ -43,11 +51,13 @@ interface AppShellProps {
   children: React.ReactNode;
   role: "ADMIN" | "COURIER";
   userName?: string | null;
+  purchaserMode?: boolean;
 }
 
-export function AppShell({ children, role, userName }: AppShellProps) {
+export function AppShell({ children, role, userName, purchaserMode }: AppShellProps) {
   const pathname = usePathname();
-  const nav = role === "ADMIN" ? adminNav : courierNav;
+  const nav = purchaserMode ? purchaserNav : role === "ADMIN" ? adminNav : courierNav;
+  const homeHref = purchaserMode ? "/purchaser" : role === "ADMIN" ? "/admin" : "/courier";
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -63,7 +73,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
-            <Link href={role === "ADMIN" ? "/admin" : "/courier"} className="flex items-center gap-2">
+            <Link href={homeHref} className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Truck className="h-5 w-5" />
               </div>
@@ -82,7 +92,8 @@ export function AppShell({ children, role, userName }: AppShellProps) {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-7xl">
+      <div className={cn("mx-auto flex max-w-7xl", purchaserMode && "max-w-lg")}>
+        {!purchaserMode && (
         <aside
           className={cn(
             "fixed inset-y-0 left-0 z-30 w-64 transform border-r bg-background pt-16 transition-transform lg:static lg:translate-x-0",
@@ -112,15 +123,16 @@ export function AppShell({ children, role, userName }: AppShellProps) {
             })}
           </nav>
         </aside>
+        )}
 
-        {mobileOpen && (
+        {mobileOpen && !purchaserMode && (
           <div
             className="fixed inset-0 z-20 bg-black/50 lg:hidden"
             onClick={() => setMobileOpen(false)}
           />
         )}
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className={cn("flex-1 p-4 sm:p-6 lg:p-8", purchaserMode && "p-0")}>{children}</main>
       </div>
     </div>
   );

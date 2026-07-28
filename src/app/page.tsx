@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getDefaultRoute } from "@/lib/permissions";
+import type { Role } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +13,5 @@ export default async function HomePage() {
     redirect("/login");
   }
 
-  if (session.user.role === "ADMIN") {
-    redirect("/admin");
-  }
-
-  redirect("/courier");
+  redirect(getDefaultRoute(session.user.role as Role));
 }

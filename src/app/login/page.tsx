@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { getDefaultRoute } from "@/lib/permissions";
 import { toast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
@@ -32,7 +33,10 @@ export default function LoginPage() {
       toast({ title: "Ошибка", description: "Неверный логин или пароль", variant: "destructive" });
       return;
     }
-    router.push("/admin");
+    const sessionRes = await fetch("/api/auth/session");
+    const session = await sessionRes.json();
+    const route = getDefaultRoute(session?.user?.role ?? "ADMIN");
+    router.push(route);
     router.refresh();
   }
 

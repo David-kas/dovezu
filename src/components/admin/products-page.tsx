@@ -67,15 +67,37 @@ export function ProductsPage() {
   );
 
   async function loadProducts() {
-    const params = new URLSearchParams();
-    if (search) params.set("search", search);
-    if (categoryFilter) params.set("category", categoryFilter);
-    if (statusFilter) params.set("status", statusFilter);
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      if (categoryFilter) params.set("category", categoryFilter);
+      if (statusFilter) params.set("status", statusFilter);
 
-    const res = await fetch(`/api/products?${params}`);
-    const data = await res.json();
-    setProducts(data);
-    setLoading(false);
+      const res = await fetch(`/api/products?${params}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast({
+          title: "Ошибка загрузки товаров",
+          description: data.error || "Проверьте миграцию базы данных (migrate-v2.sql)",
+          variant: "destructive",
+        });
+        setProducts([]);
+        return;
+      }
+
+      setProducts(Array.isArray(data) ? data : []);
+    } catch {
+      toast({
+        title: "Ошибка загрузки товаров",
+        description: "Не удалось связаться с сервером",
+        variant: "destructive",
+      });
+      setProducts([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {

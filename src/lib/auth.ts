@@ -27,7 +27,7 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findFirst({
           where: {
-            role: "ADMIN",
+            role: { in: ["ADMIN", "OPERATOR", "PURCHASER"] },
             OR: [
               { login },
               { login: normalizedPhone },

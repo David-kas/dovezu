@@ -26,6 +26,14 @@
 В **Supabase → SQL Editor** выполните содержимое файла:
 `prisma/sql/init-from-schema.sql`
 
+### После обновления кода (обязательно!)
+
+Если проект уже был развёрнут ранее, выполните миграцию:
+`prisma/sql/migrate-all.sql`
+
+Это добавит поля `article`, `sku`, `barcode`, таблицу `AuditLog` и администратора.
+Без этой миграции товары не загрузятся и возврат со склада курьера выдаст ошибку.
+
 ## 3. Vercel — создать проект
 
 1. [vercel.com/new](https://vercel.com/new) → Import `David-kas/dovezu`
@@ -59,21 +67,35 @@
 Route (app) ... /login ... /admin ... /api/health
 ```
 
-## 7. Seed (тестовые данные)
+## 7. Seed / администратор
 
-После деплоя локально с production DATABASE_URL:
+### Вариант A — SQL в Supabase (рекомендуется)
+
+В **Supabase → SQL Editor** выполните файл:
+`prisma/sql/set-admin.sql`
+
+### Вариант B — локально с production DATABASE_URL
+
+```bash
+npm run db:set-admin
+```
+
+или полный seed:
 
 ```bash
 npm run db:seed
 ```
 
-Или создайте админа вручную через Supabase.
-
-### Тестовые аккаунты (после seed)
+### Аккаунт администратора
 
 | Роль | Логин | Пароль |
 |------|-------|--------|
-| Админ | `admin` | `admin123` |
+| Админ | `79626289777` | `btt7prF7` |
+
+### Курьер (после seed)
+
+| Роль | Логин | Пароль |
+|------|-------|--------|
 | Курьер | `courier1` | `courier123` |
 
 ## 8. Проверка

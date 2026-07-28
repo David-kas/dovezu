@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth";
 import type { Role } from "@prisma/client";
+import { canPostDocuments, canCreateReceipts, canManageFinances } from "./permissions";
+
+export { canPostDocuments, canCreateReceipts, canManageFinances };
 
 export async function getSessionUser() {
   const session = await getServerSession(authOptions);
