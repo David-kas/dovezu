@@ -91,8 +91,14 @@ export default function LoginPage() {
             <TabsContent value="admin">
               <form onSubmit={handleAdminLogin} className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="admin-login">Логин</Label>
-                  <Input id="admin-login" name="login" required autoComplete="username" />
+                  <Label htmlFor="admin-login">Логин (телефон)</Label>
+                  <Input
+                    id="admin-login"
+                    name="login"
+                    placeholder="79626289777"
+                    required
+                    autoComplete="username"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="admin-password">Пароль</Label>

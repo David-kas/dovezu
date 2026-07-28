@@ -3,18 +3,33 @@ import { hashPassword } from "../src/lib/password";
 
 const prisma = new PrismaClient();
 
+const ADMIN_LOGIN = "79626289777";
+const ADMIN_PASSWORD = "btt7prF7";
+const ADMIN_PHONE = "+79626289777";
+
 async function main() {
-  const adminPassword = await hashPassword("admin123");
+  const adminPassword = await hashPassword(ADMIN_PASSWORD);
   const courierPassword = await hashPassword("courier123");
 
+  // Удаляем старый демо-аккаунт admin/admin123
+  await prisma.user.deleteMany({
+    where: { login: "admin", role: "ADMIN" },
+  });
+
   const admin = await prisma.user.upsert({
-    where: { login: "admin" },
-    update: {},
+    where: { login: ADMIN_LOGIN },
+    update: {
+      passwordHash: adminPassword,
+      name: "Администратор",
+      phone: ADMIN_PHONE,
+      role: "ADMIN",
+    },
     create: {
-      login: "admin",
+      login: ADMIN_LOGIN,
       passwordHash: adminPassword,
       role: "ADMIN",
       name: "Администратор",
+      phone: ADMIN_PHONE,
     },
   });
 
@@ -55,7 +70,7 @@ async function main() {
   }
 
   console.log("Seed completed:");
-  console.log(`  Admin: login=admin, password=admin123 (id: ${admin.id})`);
+  console.log(`  Admin: login=${ADMIN_LOGIN}, password=${ADMIN_PASSWORD} (id: ${admin.id})`);
   console.log(`  Courier: login=courier1 / phone=+79001234567 / @ivan_courier, password=courier123 (id: ${courier.id})`);
 }
 

@@ -22,10 +22,19 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.login || !credentials?.password) return null;
 
+        const login = credentials.login.trim();
+        const normalizedPhone = normalizePhone(login);
+
         const user = await prisma.user.findFirst({
           where: {
-            login: credentials.login,
             role: "ADMIN",
+            OR: [
+              { login },
+              { login: normalizedPhone },
+              ...(normalizedPhone.length >= 10
+                ? [{ phone: { contains: normalizedPhone.slice(-10) } }]
+                : []),
+            ],
           },
         });
 
