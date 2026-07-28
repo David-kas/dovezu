@@ -26,12 +26,19 @@ export async function getDocumentForPosting(documentId: string, tx: Prisma.Trans
   return doc;
 }
 
-function validateLines(lines: { productId: string | null; quantity: number; purchasePrice: unknown; excluded: boolean }[]) {
+function validateLines(
+  lines: { productId: string | null; quantity: number; purchasePrice: unknown; excluded: boolean }[],
+  docType?: DocumentType
+) {
   const active = lines.filter((l) => !l.excluded);
   if (active.length === 0) throw new Error("Нельзя провести пустой документ");
   for (const line of active) {
     if (!line.productId) throw new Error("У всех позиций должен быть выбран товар");
-    if (line.quantity <= 0) throw new Error("Количество должно быть больше нуля");
+    if (docType === "INVENTORY") {
+      if (line.quantity < 0) throw new Error("Количество не может быть отрицательным");
+    } else if (line.quantity <= 0) {
+      throw new Error("Количество должно быть больше нуля");
+    }
     const price = line.purchasePrice != null ? decimalToNumber(line.purchasePrice as never) : null;
     if (price != null && price < 0) throw new Error("Закупочная цена не может быть отрицательной");
   }
@@ -63,7 +70,7 @@ export async function postDocument(
 ) {
   return prisma.$transaction(async (tx) => {
     const doc = await getDocumentForPosting(documentId, tx);
-    validateLines(doc.lines);
+    validateLines(doc.lines, doc.type);
 
     if (doc.type === "RECEIPT") {
       await checkDuplicateReceipt(doc.supplierId, doc.receiptNumber, doc.id, tx);
@@ -77,6 +84,10 @@ export async function postDocument(
         throw new Error(check.message ?? "Расхождение суммы. Укажите причину.");
       }
       if (!doc.toWarehouseId) throw new Error("Не указан склад поступления");
+    }
+
+    if (doc.type === "INVENTORY" && !doc.toWarehouseId) {
+      throw new Error("Не указан склад инвентаризации");
     }
 
     const movementType = DOC_TO_MOVEMENT[doc.type];
@@ -183,6 +194,10 @@ export async function postDocument(
           if (!doc.toWarehouseId) throw new Error("Не указан склад инвентаризации");
           const current = await getStockQuantity(doc.toWarehouseId, productId, tx);
           const delta = qty - current;
+          await tx.stockDocumentLine.update({
+            where: { id: line.id },
+            data: { receiptLineText: JSON.stringify({ book: current, fact: qty, delta }) },
+          });
           if (delta !== 0) {
             await applyStockDelta(doc.toWarehouseId, productId, delta, tx);
             await tx.stockMovement.create({
@@ -298,6 +313,18 @@ export async function cancelDocument(
           break;
         case "WRITE_OFF":
           if (doc.fromWarehouseId) await applyStockDelta(doc.fromWarehouseId, productId, qty, tx);
+          break;
+        case "INVENTORY":
+          if (doc.toWarehouseId) {
+            let delta = 0;
+            try {
+              const meta = JSON.parse(line.receiptLineText ?? "{}");
+              delta = typeof meta.delta === "number" ? meta.delta : 0;
+            } catch {
+              /* skip */
+            }
+            if (delta !== 0) await applyStockDelta(doc.toWarehouseId, productId, -delta, tx);
+          }
           break;
         default:
           break;

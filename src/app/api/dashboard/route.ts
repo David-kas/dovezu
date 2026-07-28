@@ -3,7 +3,7 @@ import { getDashboardStats } from "@/lib/analytics";
 import { formatCurrency } from "@/lib/utils";
 
 export async function GET() {
-  const { error } = await requireAuth(["ADMIN"]);
+  const { error } = await requireAuth(["ADMIN", "OPERATOR"]);
   if (error) return error;
 
   const stats = await getDashboardStats();

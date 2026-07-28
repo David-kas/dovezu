@@ -2,15 +2,18 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, jsonError, jsonSuccess, canCreateReceipts, canPostDocuments } from "@/lib/api-auth";
 import { createReceiptDocument, submitForReview } from "@/lib/services/receipt.service";
+import { createInventoryDocument } from "@/lib/services/inventory-document.service";
 import { postDocument } from "@/lib/services/document-posting.service";
 import { getCentralWarehouse } from "@/lib/services/inventory.service";
 import { getRequestMeta } from "@/lib/services/audit.service";
 import { z } from "zod";
-import type { Role } from "@prisma/client";
+import type { Role, DocumentType } from "@prisma/client";
 
 const createReceiptSchema = z.object({
+  type: z.enum(["RECEIPT", "INVENTORY"]).optional(),
   supplierId: z.string().optional(),
   toWarehouseId: z.string().optional(),
+  warehouseId: z.string().optional(),
   purchaseDate: z.string().optional(),
   paymentMethod: z.enum(["CASH", "CARD", "TRANSFER", "OTHER"]).optional(),
   receiptNumber: z.string().optional(),
@@ -33,23 +36,27 @@ export async function GET(req: NextRequest) {
   if (error) return error;
 
   const { searchParams } = new URL(req.url);
-  const type = searchParams.get("type") || "RECEIPT";
+  const docType = (searchParams.get("type") || "RECEIPT") as DocumentType;
   const status = searchParams.get("status");
   const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 200);
 
   const documents = await prisma.stockDocument.findMany({
     where: {
-      type: type as "RECEIPT",
+      type: docType,
       ...(status ? { status: status as "DRAFT" | "REVIEW" | "POSTED" | "CANCELLED" } : {}),
-      ...(user!.role === "PURCHASER" ? { purchaserId: user!.id } : {}),
+      ...(user!.role === "PURCHASER" && docType === "RECEIPT" ? { purchaserId: user!.id } : {}),
     },
     include: {
       supplier: true,
       author: { select: { id: true, name: true } },
       purchaser: { select: { id: true, name: true } },
       toWarehouse: true,
-      lines: { include: { product: true } },
-      _count: { select: { attachments: true } },
+      ...(docType === "INVENTORY"
+        ? { _count: { select: { lines: true } } }
+        : {
+            lines: { include: { product: true } },
+            _count: { select: { attachments: true, lines: true } },
+          }),
     },
     orderBy: { createdAt: "desc" },
     take: limit,
@@ -62,16 +69,37 @@ export async function POST(req: NextRequest) {
   const { error, user } = await requireAuth(["ADMIN", "OPERATOR", "PURCHASER"]);
   if (error) return error;
 
-  if (!canCreateReceipts(user!.role as Role)) {
-    return jsonError("Forbidden", 403);
-  }
-
   const body = await req.json();
   const parsed = createReceiptSchema.safeParse(body);
   if (!parsed.success) return jsonError(parsed.error.errors[0]?.message || "Validation error");
 
-  const central = await getCentralWarehouse();
   const meta = getRequestMeta(req);
+
+  if (parsed.data.type === "INVENTORY") {
+    if (!["ADMIN", "OPERATOR"].includes(user!.role)) {
+      return jsonError("Forbidden", 403);
+    }
+    const central = await getCentralWarehouse();
+    const warehouseId = parsed.data.warehouseId ?? parsed.data.toWarehouseId ?? central.id;
+    try {
+      const doc = await createInventoryDocument({
+        authorId: user!.id,
+        authorRole: user!.role as Role,
+        warehouseId,
+        comment: parsed.data.comment,
+        meta,
+      });
+      return jsonSuccess(doc, 201);
+    } catch (e) {
+      return jsonError(e instanceof Error ? e.message : "Create failed");
+    }
+  }
+
+  if (!canCreateReceipts(user!.role as Role)) {
+    return jsonError("Forbidden", 403);
+  }
+
+  const central = await getCentralWarehouse();
 
   try {
     const doc = await createReceiptDocument({

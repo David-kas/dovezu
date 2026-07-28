@@ -19,6 +19,7 @@ import {
   ClipboardList,
   FileInput,
   Wallet,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -30,6 +31,7 @@ const adminNav = [
   { href: "/admin/products", label: "Товары", icon: Package },
   { href: "/admin/receipts", label: "Оприходования", icon: FileInput },
   { href: "/admin/purchasers", label: "Закупщики", icon: Wallet },
+  { href: "/admin/inventory", label: "Инвентаризация", icon: ClipboardCheck },
   { href: "/admin/operator", label: "Очередь", icon: ClipboardList },
   { href: "/admin/couriers", label: "Курьеры", icon: Users },
   { href: "/admin/transfers", label: "Передача", icon: ArrowRightLeft },

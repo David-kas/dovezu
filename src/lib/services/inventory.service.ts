@@ -131,8 +131,8 @@ export async function migrateExistingStockToWarehouses() {
 export async function listLowStockProducts(warehouseId?: string) {
   const where = warehouseId ? { warehouseId } : {};
   const stocks = await prisma.warehouseStock.findMany({
-    where: { ...where, quantity: { gt: 0 } },
+    where,
     include: { product: true, warehouse: true },
   });
-  return stocks.filter((s) => s.quantity <= s.product.minStock);
+  return stocks.filter((s) => s.product.minStock > 0 && s.quantity <= s.product.minStock);
 }

@@ -1,6 +1,9 @@
 import { prisma } from "./prisma";
 import { decimalToNumber } from "./utils";
 import { startOfDay, startOfMonth, endOfDay } from "date-fns";
+import { getPurchasingAnalytics } from "./purchasing-analytics";
+
+export { getPurchasingAnalytics } from "./purchasing-analytics";
 
 export async function getDashboardStats() {
   const now = new Date();
@@ -8,7 +11,7 @@ export async function getDashboardStats() {
   const todayEnd = endOfDay(now);
   const monthStart = startOfMonth(now);
 
-  const [products, couriers, orders, todayOrders, monthOrders] = await Promise.all([
+  const [products, couriers, orders, todayOrders, monthOrders, purchasing] = await Promise.all([
     prisma.product.findMany({ where: { status: "ACTIVE" } }),
     prisma.user.count({ where: { role: "COURIER", courierStatus: "ACTIVE" } }),
     prisma.order.count(),
@@ -26,6 +29,7 @@ export async function getDashboardStats() {
       },
       include: { items: true },
     }),
+    getPurchasingAnalytics(),
   ]);
 
   const totalCentralStock = products.reduce((sum, p) => sum + p.centralStock, 0);
@@ -54,6 +58,9 @@ export async function getDashboardStats() {
     todaySales: todayRevenue,
     todayProfit,
     monthProfit,
+    monthPurchaseTotal: purchasing.monthPurchaseTotal,
+    pendingReviewCount: purchasing.pendingReviewCount,
+    lowStockCount: purchasing.lowStock.length,
   };
 }
 
