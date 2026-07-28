@@ -47,9 +47,27 @@ export async function processReceiptFile(
     lines: [],
     rawJson: JSON.stringify({
       stub: true,
-      message: "OCR не настроен. Добавьте позиции вручную или настройте RECEIPT_OCR_API_URL",
+      message: "OCR не настроен — добавьте RECEIPT_OCR_API_URL или введите строки вручную на экране проверки",
       mimeType,
       size: fileBuffer.length,
     }),
+  };
+}
+
+/** Demo parser for development when OCR API is not configured */
+export function parseManualOcrPayload(body: {
+  storeName?: string;
+  inn?: string;
+  receiptNumber?: string;
+  totalAmount?: number;
+  lines?: OcrLineItem[];
+}): OcrReceiptResult {
+  return {
+    storeName: body.storeName,
+    inn: body.inn,
+    receiptNumber: body.receiptNumber,
+    totalAmount: body.totalAmount,
+    lines: body.lines ?? [],
+    rawJson: JSON.stringify(body),
   };
 }

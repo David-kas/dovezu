@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Clock, FileInput } from "lucide-react";
+import { CheckCircle, Clock, FileInput, Eye } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -96,12 +97,20 @@ export function ReceiptsPage() {
                 </p>
                 <p className="text-xs text-muted-foreground">{formatDate(doc.createdAt)}</p>
               </div>
-              {doc.status === "REVIEW" && (
-                <Button onClick={() => postDocument(doc.id)}>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Провести
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/admin/receipts/${doc.id}`}>
+                    <Eye className="h-4 w-4 mr-2" />
+                    Проверка
+                  </Link>
                 </Button>
-              )}
+                {doc.status === "REVIEW" && (
+                  <Button onClick={() => postDocument(doc.id)}>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Провести
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
         ))}

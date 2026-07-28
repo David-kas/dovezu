@@ -31,3 +31,6 @@ yarn-error.log*
 
 # prisma local db
 prisma/*.db
+
+# uploaded receipts
+/public/uploads/

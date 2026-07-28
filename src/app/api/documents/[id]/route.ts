@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, jsonError, jsonSuccess, canPostDocuments } from "@/lib/api-auth";
-import { addDocumentLine } from "@/lib/services/receipt.service";
+import { addDocumentLine, updateDocumentMeta, submitForReview } from "@/lib/services/receipt.service";
 import { cancelDocument } from "@/lib/services/document-posting.service";
 import { getRequestMeta } from "@/lib/services/audit.service";
 import type { Role } from "@prisma/client";
@@ -65,6 +65,39 @@ export async function POST(
       }
       const meta = getRequestMeta(req);
       const doc = await cancelDocument(id, user!.id, user!.role as Role, meta);
+      return jsonSuccess(doc);
+    }
+
+    return jsonError("Unknown action");
+  } catch (e) {
+    return jsonError(e instanceof Error ? e.message : "Failed");
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { error, user } = await requireAuth(["ADMIN", "OPERATOR", "PURCHASER"]);
+  if (error) return error;
+
+  const { id } = await params;
+  const body = await req.json();
+
+  try {
+    if (body.action === "update-meta") {
+      const doc = await updateDocumentMeta(id, {
+        supplierId: body.supplierId,
+        receiptTotal: body.receiptTotal,
+        receiptNumber: body.receiptNumber,
+        paymentMethod: body.paymentMethod,
+        comment: body.comment,
+      });
+      return jsonSuccess(doc);
+    }
+
+    if (body.action === "submit-review") {
+      const doc = await submitForReview(id, user!.id, user!.role as Role);
       return jsonSuccess(doc);
     }
 
