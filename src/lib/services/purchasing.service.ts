@@ -28,6 +28,10 @@ export async function getPurchaserSummary(purchaserId: string) {
     where: { purchaserId, status: "CANCELLED" },
   });
 
+  const draftCount = await prisma.stockDocument.count({
+    where: { purchaserId, status: "DRAFT", type: "RECEIPT" },
+  });
+
   const lastPurchase = await prisma.stockDocument.findFirst({
     where: { purchaserId, type: "RECEIPT", status: "POSTED" },
     orderBy: { postedAt: "desc" },
@@ -39,9 +43,99 @@ export async function getPurchaserSummary(purchaserId: string) {
     balance: totalIssued - totalPurchased,
     pendingReview,
     cancelled,
+    draftCount,
     receiptCount: postedReceipts.length,
     lastPurchaseAt: lastPurchase?.postedAt ?? null,
   };
+}
+
+export async function listPurchasers() {
+  const purchasers = await prisma.user.findMany({
+    where: { role: "PURCHASER" },
+    select: { id: true, name: true, phone: true, login: true, createdAt: true },
+    orderBy: { name: "asc" },
+  });
+
+  return Promise.all(
+    purchasers.map(async (p) => ({
+      ...p,
+      ...(await getPurchaserSummary(p.id)),
+    }))
+  );
+}
+
+export async function getPurchaserDetail(purchaserId: string) {
+  const purchaser = await prisma.user.findFirst({
+    where: { id: purchaserId, role: "PURCHASER" },
+    select: { id: true, name: true, phone: true, login: true, createdAt: true },
+  });
+  if (!purchaser) throw new Error("Закупщик не найден");
+
+  const summary = await getPurchaserSummary(purchaserId);
+
+  const advances = await prisma.purchaserAdvance.findMany({
+    where: { purchaserId },
+    orderBy: { issuedAt: "desc" },
+    take: 50,
+    include: { issuedBy: { select: { name: true } } },
+  });
+
+  const documents = await prisma.stockDocument.findMany({
+    where: { purchaserId, type: "RECEIPT" },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      createdAt: true,
+      postedAt: true,
+      totalPurchaseCost: true,
+      linesTotal: true,
+      supplier: { select: { name: true } },
+    },
+  });
+
+  return {
+    purchaser,
+    summary,
+    advances: advances.map((a) => ({
+      id: a.id,
+      amount: decimalToNumber(a.amount),
+      issuedAt: a.issuedAt,
+      paymentMethod: a.paymentMethod,
+      comment: a.comment,
+      issuedBy: a.issuedBy,
+    })),
+    documents: documents.map((d) => ({
+      id: d.id,
+      number: d.number,
+      status: d.status,
+      createdAt: d.createdAt,
+      postedAt: d.postedAt,
+      totalPurchaseCost: d.totalPurchaseCost ? decimalToNumber(d.totalPurchaseCost) : null,
+      linesTotal: d.linesTotal ? decimalToNumber(d.linesTotal) : null,
+      supplier: d.supplier,
+    })),
+  };
+}
+
+export async function listAdvances(purchaserId: string, limit = 50) {
+  const advances = await prisma.purchaserAdvance.findMany({
+    where: { purchaserId },
+    orderBy: { issuedAt: "desc" },
+    take: limit,
+    include: { issuedBy: { select: { name: true } } },
+  });
+
+  return advances.map((a) => ({
+    id: a.id,
+    amount: decimalToNumber(a.amount),
+    issuedAt: a.issuedAt,
+    paymentMethod: a.paymentMethod,
+    comment: a.comment,
+    issuedBy: a.issuedBy,
+  }));
 }
 
 export async function issueAdvance(input: {
@@ -66,5 +160,6 @@ export async function issueAdvance(input: {
       comment: input.comment,
       issuedById: input.issuedById,
     },
+    include: { issuedBy: { select: { name: true } } },
   });
 }

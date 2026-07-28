@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingBag, ScanLine, Camera, Send, ChevronRight } from "lucide-react";
+import { ShoppingBag, ScanLine, Camera, Send, ChevronRight, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
@@ -13,6 +13,7 @@ interface Summary {
   totalPurchased: number;
   balance: number;
   pendingReview: number;
+  receiptCount: number;
 }
 
 export function PurchaserHomePage() {
@@ -62,7 +63,34 @@ export function PurchaserHomePage() {
           <Card>
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">На отчёт</p>
-              <p className="text-lg font-semibold">{formatCurrency(summary.balance)}</p>
+              <p
+                className={`text-lg font-semibold ${
+                  summary.balance > 0 ? "text-amber-600" : summary.balance < 0 ? "text-destructive" : ""
+                }`}
+              >
+                {formatCurrency(summary.balance)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">Закуплено</p>
+              <p className="text-lg font-semibold">{formatCurrency(summary.totalPurchased)}</p>
+            </CardContent>
+          </Card>
+          <Card
+            className="cursor-pointer hover:bg-accent/50"
+            onClick={() => router.push("/purchaser/report")}
+          >
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Отчёт</p>
+                <p className="text-lg font-semibold">
+                  {summary.receiptCount} закупок
+                  {summary.pendingReview > 0 && ` · ${summary.pendingReview} ждут`}
+                </p>
+              </div>
+              <Wallet className="h-5 w-5 text-muted-foreground" />
             </CardContent>
           </Card>
         </div>

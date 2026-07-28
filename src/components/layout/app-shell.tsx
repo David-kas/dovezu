@@ -18,6 +18,7 @@ import {
   Truck,
   ClipboardList,
   FileInput,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
@@ -28,6 +29,7 @@ const adminNav = [
   { href: "/admin", label: "Дашборд", icon: LayoutDashboard },
   { href: "/admin/products", label: "Товары", icon: Package },
   { href: "/admin/receipts", label: "Оприходования", icon: FileInput },
+  { href: "/admin/purchasers", label: "Закупщики", icon: Wallet },
   { href: "/admin/operator", label: "Очередь", icon: ClipboardList },
   { href: "/admin/couriers", label: "Курьеры", icon: Users },
   { href: "/admin/transfers", label: "Передача", icon: ArrowRightLeft },
@@ -39,6 +41,7 @@ const adminNav = [
 
 const purchaserNav = [
   { href: "/purchaser", label: "Закупка", icon: ShoppingCart },
+  { href: "/purchaser/report", label: "Отчёт", icon: Wallet },
 ];
 
 const courierNav = [

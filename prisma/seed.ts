@@ -48,6 +48,19 @@ async function main() {
     },
   });
 
+  const purchaserPassword = await hashPassword("purchaser123");
+  const purchaser = await prisma.user.upsert({
+    where: { login: "purchaser1" },
+    update: {},
+    create: {
+      login: "purchaser1",
+      passwordHash: purchaserPassword,
+      role: "PURCHASER",
+      name: "Пётр Закупкин",
+      phone: "+79007654321",
+    },
+  });
+
   const products = [
     { name: "Вода 19л", category: "Напитки", purchasePrice: 150, salePrice: 350, centralStock: 100 },
     { name: "Хлеб белый", category: "Выпечка", purchasePrice: 35, salePrice: 65, centralStock: 50 },
@@ -72,6 +85,7 @@ async function main() {
   console.log("Seed completed:");
   console.log(`  Admin: login=${ADMIN_LOGIN}, password=${ADMIN_PASSWORD} (id: ${admin.id})`);
   console.log(`  Courier: login=courier1 / phone=+79001234567 / @ivan_courier, password=courier123 (id: ${courier.id})`);
+  console.log(`  Purchaser: login=purchaser1 / phone=+79007654321, password=purchaser123 (id: ${purchaser.id})`);
 }
 
 main()

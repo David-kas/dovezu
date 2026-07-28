@@ -32,6 +32,20 @@ export const courierSchema = z.object({
   telegramChatId: z.string().optional(),
 });
 
+export const purchaserSchema = z.object({
+  name: z.string().min(1, "Введите имя"),
+  phone: z.string().optional(),
+  login: z.string().min(3, "Логин минимум 3 символа"),
+  password: z.string().min(6, "Пароль минимум 6 символов").optional(),
+});
+
+export const advanceSchema = z.object({
+  purchaserId: z.string().min(1),
+  amount: z.coerce.number().positive("Сумма должна быть больше нуля"),
+  paymentMethod: z.enum(["CASH", "CARD", "TRANSFER", "OTHER"]),
+  comment: z.string().optional(),
+});
+
 export const transferSchema = z.object({
   courierId: z.string().min(1),
   productId: z.string().min(1),

@@ -60,6 +60,7 @@ export const config = {
     "/api/documents/:path*",
     "/api/barcodes/:path*",
     "/api/purchaser/:path*",
+    "/api/purchasers/:path*",
     "/api/operator/:path*",
   ],
 };
