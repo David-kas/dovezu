@@ -76,6 +76,7 @@ export function OrdersPage() {
     courierId: "",
   });
   const [orderItems, setOrderItems] = useState<OrderItemEntry[]>([]);
+  const [statusPickerKey, setStatusPickerKey] = useState<Record<string, number>>({});
 
   async function loadOrders() {
     const params = statusFilter ? `?status=${statusFilter}` : "";
@@ -222,13 +223,23 @@ export function OrdersPage() {
   }
 
   async function updateStatus(orderId: string, status: string) {
-    await fetch(`/api/orders/${orderId}`, {
+    const res = await fetch(`/api/orders/${orderId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "status", status }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast({
+        title: "Не удалось сменить статус",
+        description: typeof err.error === "string" ? err.error : "Проверьте остатки и повторите",
+        variant: "destructive",
+      });
+      setStatusPickerKey((k) => ({ ...k, [orderId]: (k[orderId] ?? 0) + 1 }));
+      return;
+    }
     toast({ title: "Статус обновлён" });
-    loadOrders();
+    await loadOrders();
   }
 
   return (
@@ -380,7 +391,10 @@ export function OrdersPage() {
                     </Select>
                   )}
                   {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
-                    <Select onValueChange={(v) => updateStatus(order.id, v)}>
+                    <Select
+                      key={`${order.id}-${order.status}-${statusPickerKey[order.id] ?? 0}`}
+                      onValueChange={(v) => updateStatus(order.id, v)}
+                    >
                       <SelectTrigger><SelectValue placeholder="Сменить статус" /></SelectTrigger>
                       <SelectContent>
                         {Object.entries(ORDER_STATUS_LABELS).map(([k, v]) => (

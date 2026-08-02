@@ -7,6 +7,8 @@ import {
   ensureWarehouseStockMigrated,
   alignCentralWarehouseStock,
   resolveCentralWarehouseId,
+  getStockQuantity,
+  applyStockDelta,
 } from "./inventory.service";
 import { postDocumentInTransaction } from "./document-posting.service";
 import { decimalToNumber } from "../utils";
@@ -181,6 +183,40 @@ export async function returnAllFromCourierViaDocument(
   };
 }
 
+async function ensureCourierStockForOrder(
+  tx: Prisma.TransactionClient,
+  courierWarehouseId: string,
+  items: { productId: string; quantity: number; product: { name: string } }[]
+) {
+  const central = await getCentralWarehouse(tx);
+
+  for (const item of items) {
+    const courierQty = await getStockQuantity(courierWarehouseId, item.productId, tx);
+    const need = item.quantity;
+    if (courierQty >= need) continue;
+
+    await syncCentralStockToWarehouse(item.productId, tx);
+    await alignCentralWarehouseStock(central.id, item.productId, tx);
+
+    const toMove = need - courierQty;
+    const centralQty = await getStockQuantity(central.id, item.productId, tx);
+    const product = await tx.product.findUnique({
+      where: { id: item.productId },
+      select: { centralStock: true },
+    });
+    const availableCentral = Math.max(centralQty, product?.centralStock ?? 0);
+
+    if (availableCentral < toMove) {
+      throw new Error(
+        `Недостаточно «${item.product.name}» для выполнения заказа (нужно ${need}, у курьера ${courierQty}, на складе ${availableCentral}).`
+      );
+    }
+
+    await applyStockDelta(central.id, item.productId, -toMove, tx);
+    await applyStockDelta(courierWarehouseId, item.productId, toMove, tx);
+  }
+}
+
 export async function completeOrderViaDocument(
   orderId: string,
   actorId: string,
@@ -204,6 +240,8 @@ export async function completeOrderViaDocument(
     if (!effectiveCourierId) throw new Error("Курьер не назначен");
 
     const courierWarehouse = await getCourierWarehouse(effectiveCourierId, tx);
+
+    await ensureCourierStockForOrder(tx, courierWarehouse.id, order.items);
 
     const doc = await createDraftDocument(tx, {
       type: "SALE",
