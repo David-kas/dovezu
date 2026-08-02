@@ -14,19 +14,36 @@ interface DashboardData {
   todaySales: number;
   todayProfit: number;
   monthProfit: number;
-  monthPurchaseTotal: number;
-  pendingReviewCount: number;
-  lowStockCount: number;
+  monthPurchaseTotal?: number;
+  pendingReviewCount?: number;
+  lowStockCount?: number;
+  error?: string;
+  _degraded?: boolean;
 }
 
 export function AdminDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/dashboard")
-      .then((r) => r.json())
-      .then(setData)
+      .then(async (r) => {
+        const json = await r.json();
+        if (!r.ok) {
+          setLoadError(json.error ?? "Не удалось загрузить дашборд");
+          return null;
+        }
+        if (json.error && json.totalCentralStock === undefined) {
+          setLoadError(json.error);
+          return null;
+        }
+        return json as DashboardData;
+      })
+      .then((d) => {
+        if (d) setData(d);
+      })
+      .catch(() => setLoadError("Ошибка сети или сервера"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -34,8 +51,19 @@ export function AdminDashboard() {
     return <div className="text-muted-foreground">Загрузка...</div>;
   }
 
-  if (!data) {
-    return <div className="text-destructive">Ошибка загрузки данных</div>;
+  if (loadError || !data) {
+    return (
+      <div className="space-y-4">
+        <p className="text-destructive">{loadError ?? "Ошибка загрузки данных"}</p>
+        <p className="text-sm text-muted-foreground max-w-lg">
+          Если вы недавно обновляли систему, выполните в Supabase SQL из файлов{" "}
+          <code className="text-xs">migrate-all.sql</code> и <code className="text-xs">migrate-v3.sql</code>.
+        </p>
+        <Button variant="outline" onClick={() => window.location.reload()}>
+          Обновить страницу
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -43,6 +71,11 @@ export function AdminDashboard() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Дашборд</h1>
         <p className="text-muted-foreground mt-1">Обзор ключевых показателей</p>
+        {data._degraded && (
+          <p className="text-sm text-amber-600 mt-2">
+            Часть данных о закупках недоступна — проверьте миграцию БД (migrate-v3).
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -52,9 +85,9 @@ export function AdminDashboard() {
         <StatCard title="Продажи сегодня" value={formatCurrency(data.todaySales)} icon={TrendingUp} />
         <StatCard title="Прибыль сегодня" value={formatCurrency(data.todayProfit)} icon={DollarSign} />
         <StatCard title="Прибыль за месяц" value={formatCurrency(data.monthProfit)} icon={Calendar} />
-        <StatCard title="Закупки за месяц" value={formatCurrency(data.monthPurchaseTotal)} icon={FileInput} description="проведённые оприходования" />
-        <StatCard title="На проверке" value={data.pendingReviewCount} icon={FileInput} description="оприходований" />
-        <StatCard title="Низкий остаток" value={data.lowStockCount} icon={AlertTriangle} description="позиций ниже мин." />
+        <StatCard title="Закупки за месяц" value={formatCurrency(data.monthPurchaseTotal ?? 0)} icon={FileInput} description="проведённые оприходования" />
+        <StatCard title="На проверке" value={data.pendingReviewCount ?? 0} icon={FileInput} description="оприходований" />
+        <StatCard title="Низкий остаток" value={data.lowStockCount ?? 0} icon={AlertTriangle} description="позиций ниже мин." />
       </div>
 
       <div className="flex flex-wrap gap-2">

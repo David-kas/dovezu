@@ -29,16 +29,20 @@ export async function ensureSingleCentralWarehouse(tx?: Prisma.TransactionClient
       await db.warehouseStock.delete({ where: { id: s.id } }).catch(() => {});
     }
 
-    await db.stockDocument.updateMany({
-      where: { fromWarehouseId: dup.id },
-      data: { fromWarehouseId: primary.id },
-    });
-    await db.stockDocument.updateMany({
-      where: { toWarehouseId: dup.id },
-      data: { toWarehouseId: primary.id },
-    });
+    try {
+      await db.stockDocument.updateMany({
+        where: { fromWarehouseId: dup.id },
+        data: { fromWarehouseId: primary.id },
+      });
+      await db.stockDocument.updateMany({
+        where: { toWarehouseId: dup.id },
+        data: { toWarehouseId: primary.id },
+      });
+    } catch {
+      /* StockDocument может отсутствовать до migrate-v3 */
+    }
 
-    await db.warehouse.update({ where: { id: dup.id }, data: { isActive: false } });
+    await db.warehouse.update({ where: { id: dup.id }, data: { isActive: false } }).catch(() => {});
   }
 
   return primary;
@@ -259,8 +263,12 @@ export async function getCentralAvailableQuantity(productId: string, tx?: Prisma
 }
 
 export async function ensureWarehouseStockMigrated() {
-  await ensureSingleCentralWarehouse();
-  await migrateExistingStockToWarehouses();
+  try {
+    await ensureSingleCentralWarehouse();
+    await migrateExistingStockToWarehouses();
+  } catch (e) {
+    console.error("ensureWarehouseStockMigrated failed:", e);
+  }
 }
 
 export async function listLowStockProducts(warehouseId?: string) {

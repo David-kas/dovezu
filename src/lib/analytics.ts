@@ -11,7 +11,19 @@ export async function getDashboardStats() {
   const todayEnd = endOfDay(now);
   const monthStart = startOfMonth(now);
 
-  const [products, couriers, orders, todayOrders, monthOrders, purchasing] = await Promise.all([
+  let purchasing = {
+    monthPurchaseTotal: 0,
+    pendingReviewCount: 0,
+    lowStock: [] as { productId: string }[],
+  };
+
+  try {
+    purchasing = await getPurchasingAnalytics();
+  } catch (e) {
+    console.error("getPurchasingAnalytics failed:", e);
+  }
+
+  const [products, couriers, orders, todayOrders, monthOrders] = await Promise.all([
     prisma.product.findMany({ where: { status: "ACTIVE" } }),
     prisma.user.count({ where: { role: "COURIER", courierStatus: "ACTIVE" } }),
     prisma.order.count(),
@@ -29,7 +41,6 @@ export async function getDashboardStats() {
       },
       include: { items: true },
     }),
-    getPurchasingAnalytics(),
   ]);
 
   const totalCentralStock = products.reduce((sum, p) => sum + p.centralStock, 0);
