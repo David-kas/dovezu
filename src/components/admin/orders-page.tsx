@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Download, X } from "lucide-react";
+import { Plus, Download, X, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +36,7 @@ interface OrderItemEntry {
 interface OrderItem {
   id: string;
   quantity: number;
-  product: { name: string };
+  product: { id: string; name: string };
   salePrice: number;
 }
 interface Order {
@@ -67,6 +67,7 @@ export function OrdersPage() {
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [form, setForm] = useState({
     clientName: "",
     clientPhone: "",
@@ -123,7 +124,39 @@ export function OrdersPage() {
     setOrderItems((prev) => prev.filter((i) => i.productId !== productId));
   }
 
-  async function handleCreate(e: React.FormEvent) {
+  function openCreate() {
+    setEditingOrder(null);
+    setForm({ clientName: "", clientPhone: "", address: "", comment: "", courierId: "" });
+    setOrderItems([]);
+    setDialogOpen(true);
+  }
+
+  function openEdit(order: Order) {
+    setEditingOrder(order);
+    setForm({
+      clientName: order.clientName,
+      clientPhone: order.clientPhone,
+      address: order.address,
+      comment: order.comment ?? "",
+      courierId: order.courier?.id ?? "",
+    });
+    setOrderItems(
+      order.items.map((item) => ({
+        productId: item.product.id,
+        productName: item.product.name,
+        quantity: item.quantity,
+        salePrice: item.salePrice,
+      }))
+    );
+    setDialogOpen(true);
+  }
+
+  function closeDialog() {
+    setDialogOpen(false);
+    setEditingOrder(null);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (orderItems.length === 0) {
       toast({ title: "Добавьте товары", variant: "destructive" });
@@ -131,15 +164,33 @@ export function OrdersPage() {
     }
 
     const items = orderItems.map(({ productId, quantity }) => ({ productId, quantity }));
+    const payload = {
+      ...form,
+      courierId: form.courierId || undefined,
+      items,
+    };
+
+    if (editingOrder) {
+      const res = await fetch(`/api/orders/${editingOrder.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ title: "Ошибка", description: err.error, variant: "destructive" });
+        return;
+      }
+      toast({ title: "Заказ сохранён" });
+      closeDialog();
+      loadOrders();
+      return;
+    }
 
     const res = await fetch("/api/orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...form,
-        courierId: form.courierId || undefined,
-        items,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
@@ -149,7 +200,7 @@ export function OrdersPage() {
     }
 
     toast({ title: "Заказ создан" });
-    setDialogOpen(false);
+    closeDialog();
     setForm({ clientName: "", clientPhone: "", address: "", comment: "", courierId: "" });
     setOrderItems([]);
     loadOrders();
@@ -191,13 +242,21 @@ export function OrdersPage() {
           <Button variant="outline" asChild>
             <a href="/api/export?type=orders"><Download className="h-4 w-4 mr-2" />Excel</a>
           </Button>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog
+            open={dialogOpen}
+            onOpenChange={(open) => {
+              if (!open) closeDialog();
+              else setDialogOpen(true);
+            }}
+          >
             <DialogTrigger asChild>
-              <Button><Plus className="h-4 w-4 mr-2" />Новый заказ</Button>
+              <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" />Новый заказ</Button>
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto">
-              <DialogHeader><DialogTitle>Новый заказ</DialogTitle></DialogHeader>
-              <form onSubmit={handleCreate} className="space-y-4">
+              <DialogHeader>
+                <DialogTitle>{editingOrder ? `Редактировать заказ #${editingOrder.orderNumber}` : "Новый заказ"}</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label>Имя клиента</Label>
                   <Input value={form.clientName} onChange={(e) => setForm({ ...form, clientName: e.target.value })} required />
@@ -263,7 +322,9 @@ export function OrdersPage() {
                     </div>
                   )}
                 </div>
-                <Button type="submit" className="w-full">Создать заказ</Button>
+                <Button type="submit" className="w-full">
+                  {editingOrder ? "Сохранить изменения" : "Создать заказ"}
+                </Button>
               </form>
             </DialogContent>
           </Dialog>
@@ -302,6 +363,12 @@ export function OrdersPage() {
                   <p className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</p>
                 </div>
                 <div className="flex flex-col gap-2 min-w-[180px]">
+                  {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
+                    <Button variant="outline" size="sm" onClick={() => openEdit(order)}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Редактировать
+                    </Button>
+                  )}
                   {order.courier ? (
                     <p className="text-sm">Курьер: {order.courier.name}</p>
                   ) : (

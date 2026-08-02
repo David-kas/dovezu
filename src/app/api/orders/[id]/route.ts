@@ -40,6 +40,12 @@ export async function PUT(
   if (error) return error;
 
   const { id } = await params;
+  const existing = await prisma.order.findUnique({ where: { id } });
+  if (!existing) return jsonError("Заказ не найден", 404);
+  if (existing.status === "COMPLETED" || existing.status === "CANCELLED") {
+    return jsonError("Нельзя редактировать завершённый или отменённый заказ");
+  }
+
   const body = await req.json();
   const parsed = orderSchema.safeParse(body);
   if (!parsed.success) {
@@ -50,6 +56,10 @@ export async function PUT(
   const products = await prisma.product.findMany({
     where: { id: { in: data.items.map((i) => i.productId) } },
   });
+  if (products.length !== data.items.length) {
+    return jsonError("Один или несколько товаров не найдены");
+  }
+
   const productMap = new Map(products.map((p) => [p.id, p]));
 
   let totalAmount = 0;
@@ -66,22 +76,49 @@ export async function PUT(
     };
   });
 
+  const newCourierId = data.courierId || null;
+  let newStatus = existing.status;
+  if (newCourierId && !existing.courierId) {
+    newStatus = "ASSIGNED";
+  } else if (!newCourierId && existing.courierId) {
+    newStatus = "NEW";
+  } else if (newCourierId && existing.courierId !== newCourierId) {
+    newStatus = "ASSIGNED";
+  }
+
   await prisma.orderItem.deleteMany({ where: { orderId: id } });
 
-  const order = await prisma.order.update({
+  await prisma.order.update({
     where: { id },
     data: {
       clientName: data.clientName,
       clientPhone: data.clientPhone,
       address: data.address,
       comment: data.comment || null,
+      courierId: newCourierId,
+      status: newStatus,
       totalAmount,
       items: { create: orderItems },
     },
+  });
+
+  if (newCourierId && newCourierId !== existing.courierId) {
+    await assignOrderToCourier(id, newCourierId);
+  }
+
+  const refreshed = await prisma.order.findUnique({
+    where: { id },
     include: { items: { include: { product: true } }, courier: true },
   });
 
-  return jsonSuccess(order);
+  return jsonSuccess({
+    ...refreshed,
+    totalAmount: decimalToNumber(refreshed!.totalAmount),
+    items: refreshed!.items.map((item) => ({
+      ...item,
+      salePrice: decimalToNumber(item.salePrice),
+    })),
+  });
 }
 
 export async function PATCH(

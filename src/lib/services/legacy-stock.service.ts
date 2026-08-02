@@ -5,6 +5,8 @@ import {
   getCourierWarehouse,
   syncCentralStockToWarehouse,
   ensureWarehouseStockMigrated,
+  alignCentralWarehouseStock,
+  resolveCentralWarehouseId,
 } from "./inventory.service";
 import { postDocumentInTransaction } from "./document-posting.service";
 import { decimalToNumber } from "../utils";
@@ -61,6 +63,14 @@ export async function createAndPostDocument(input: {
   lines: DocumentLineInput[];
 }) {
   return prisma.$transaction(async (tx) => {
+    if (input.type === "TRANSFER" && input.fromWarehouseId) {
+      const centralId = await resolveCentralWarehouseId(input.fromWarehouseId, tx);
+      input.fromWarehouseId = centralId;
+      for (const line of input.lines) {
+        await alignCentralWarehouseStock(centralId, line.productId, tx);
+      }
+    }
+
     const doc = await createDraftDocument(tx, input);
     await postDocumentInTransaction(tx, doc.id, input.authorId, input.authorRole);
     return tx.stockDocument.findUnique({

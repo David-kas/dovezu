@@ -1,6 +1,6 @@
 import { prisma } from "../prisma";
 import type { DocumentType, MovementType, Prisma, Role } from "@prisma/client";
-import { applyStockDelta, getCentralWarehouse, getStockQuantity } from "./inventory.service";
+import { applyStockDelta, getCentralWarehouse, getStockQuantity, alignCentralWarehouseStock, resolveCentralWarehouseId } from "./inventory.service";
 import { calcWeightedAvgPrice, sumDocumentLines, checkReceiptDiscrepancy } from "./costing.service";
 import { logActivity } from "./audit.service";
 import { decimalToNumber } from "../utils";
@@ -115,6 +115,18 @@ export async function postDocumentInTransaction(
 
     const movementType = DOC_TO_MOVEMENT[doc.type];
 
+    let fromWarehouseId = doc.fromWarehouseId;
+    if (fromWarehouseId && doc.type === "TRANSFER") {
+      fromWarehouseId = await resolveCentralWarehouseId(fromWarehouseId, tx);
+      if (fromWarehouseId !== doc.fromWarehouseId) {
+        await tx.stockDocument.update({
+          where: { id: documentId },
+          data: { fromWarehouseId },
+        });
+        doc.fromWarehouseId = fromWarehouseId;
+      }
+    }
+
     for (const line of doc.lines) {
       if (!line.productId || line.excluded) continue;
       const productId = line.productId;
@@ -156,13 +168,15 @@ export async function postDocumentInTransaction(
           break;
         }
         case "TRANSFER": {
+          await alignCentralWarehouseStock(doc.fromWarehouseId!, productId, tx);
           const available = await getStockQuantity(doc.fromWarehouseId!, productId, tx);
           if (available < qty) {
-            const p = await tx.product.findUnique({ where: { id: productId }, select: { name: true, centralStock: true } });
+            const p = await tx.product.findUnique({
+              where: { id: productId },
+              select: { name: true, centralStock: true },
+            });
             throw new Error(
-              `Недостаточно «${p?.name ?? "товара"}» на центральном складе (учёт: ${available} шт.` +
-                (p && p.centralStock > available ? `, в карточке: ${p.centralStock} — нажмите «Синхронизировать склад» в разделе Передача или обновите страницу` : "") +
-                ")"
+              `Недостаточно «${p?.name ?? "товара"}» на центральном складе (учёт: ${available} шт., в карточке: ${p?.centralStock ?? 0}). Обновите страницу и повторите.`
             );
           }
 

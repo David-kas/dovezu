@@ -49,7 +49,8 @@ export async function GET(req: NextRequest) {
       salePrice: decimalToNumber(item.salePrice),
       purchasePrice: user!.role === "ADMIN" ? decimalToNumber(item.purchasePrice) : undefined,
       product: {
-        ...item.product,
+        id: item.product.id,
+        name: item.product.name,
         salePrice: decimalToNumber(item.product.salePrice),
         purchasePrice: user!.role === "ADMIN" ? decimalToNumber(item.product.purchasePrice) : undefined,
       },

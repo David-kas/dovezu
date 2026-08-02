@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, jsonError, jsonSuccess } from "@/lib/api-auth";
 import { transferSchema } from "@/lib/validations";
 import { transferToCourier } from "@/lib/orders";
+import { ensureWarehouseStockMigrated, syncCentralStockToWarehouse } from "@/lib/services/inventory.service";
 
 const TRANSFER_TYPES = ["TRANSFER_TO_COURIER", "DOCUMENT_TRANSFER"] as const;
 
@@ -52,6 +53,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    await ensureWarehouseStockMigrated();
+    await syncCentralStockToWarehouse(parsed.data.productId);
+
     const movement = await transferToCourier(
       parsed.data.courierId,
       parsed.data.productId,

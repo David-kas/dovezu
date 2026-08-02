@@ -45,6 +45,7 @@ export function TransfersPage() {
   const [loading, setLoading] = useState(false);
 
   async function loadData() {
+    await fetch("/api/warehouses", { method: "POST" }).catch(() => {});
     const [couriersRes, productsRes, movementsRes] = await Promise.all([
       fetch("/api/couriers"),
       fetch("/api/products?status=ACTIVE"),

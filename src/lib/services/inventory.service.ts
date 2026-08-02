@@ -1,17 +1,106 @@
 import { prisma } from "../prisma";
 import type { Prisma } from "@prisma/client";
 
-export async function getCentralWarehouse(tx?: Prisma.TransactionClient) {
+/** Один центральный склад: объединяем дубликаты и переносим остатки. */
+export async function ensureSingleCentralWarehouse(tx?: Prisma.TransactionClient) {
   const db = tx ?? prisma;
-  let warehouse = await db.warehouse.findFirst({
+  const centrals = await db.warehouse.findMany({
     where: { type: "CENTRAL", isActive: true },
+    orderBy: { createdAt: "asc" },
   });
-  if (!warehouse) {
-    warehouse = await db.warehouse.create({
+
+  if (centrals.length === 0) {
+    return db.warehouse.create({
       data: { name: "Центральный склад", type: "CENTRAL" },
     });
   }
-  return warehouse;
+
+  const primary = centrals[0]!;
+  for (const dup of centrals.slice(1)) {
+    const stocks = await db.warehouseStock.findMany({ where: { warehouseId: dup.id } });
+    for (const s of stocks) {
+      const onPrimary = await getWarehouseStock(primary.id, s.productId, tx);
+      const mergedQty = (onPrimary?.quantity ?? 0) + s.quantity;
+      await db.warehouseStock.upsert({
+        where: { warehouseId_productId: { warehouseId: primary.id, productId: s.productId } },
+        create: { warehouseId: primary.id, productId: s.productId, quantity: mergedQty },
+        update: { quantity: mergedQty },
+      });
+      await db.warehouseStock.delete({ where: { id: s.id } }).catch(() => {});
+    }
+
+    await db.stockDocument.updateMany({
+      where: { fromWarehouseId: dup.id },
+      data: { fromWarehouseId: primary.id },
+    });
+    await db.stockDocument.updateMany({
+      where: { toWarehouseId: dup.id },
+      data: { toWarehouseId: primary.id },
+    });
+
+    await db.warehouse.update({ where: { id: dup.id }, data: { isActive: false } });
+  }
+
+  return primary;
+}
+
+export async function getCentralWarehouse(tx?: Prisma.TransactionClient) {
+  if (tx) {
+    let warehouse = await tx.warehouse.findFirst({
+      where: { type: "CENTRAL", isActive: true },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!warehouse) {
+      warehouse = await tx.warehouse.create({
+        data: { name: "Центральный склад", type: "CENTRAL" },
+      });
+    }
+    return warehouse;
+  }
+  return ensureSingleCentralWarehouse();
+}
+
+/** Перед списанием: выровнять WarehouseStock с Product.centralStock на центральном складе. */
+export async function alignCentralWarehouseStock(
+  warehouseId: string,
+  productId: string,
+  tx: Prisma.TransactionClient
+) {
+  const warehouse = await tx.warehouse.findUnique({ where: { id: warehouseId } });
+  if (!warehouse || warehouse.type !== "CENTRAL") return;
+
+  const primary = await getCentralWarehouse(tx);
+  const effectiveWarehouseId =
+    warehouse.isActive && warehouse.id === primary.id ? warehouseId : primary.id;
+
+  const product = await tx.product.findUnique({ where: { id: productId } });
+  if (!product || product.centralStock <= 0) return;
+
+  const current = await getStockQuantity(effectiveWarehouseId, productId, tx);
+  if (current >= product.centralStock) return;
+
+  await tx.warehouseStock.upsert({
+    where: {
+      warehouseId_productId: { warehouseId: effectiveWarehouseId, productId },
+    },
+    create: {
+      warehouseId: effectiveWarehouseId,
+      productId,
+      quantity: product.centralStock,
+    },
+    update: { quantity: product.centralStock },
+  });
+  await syncLegacyStock(effectiveWarehouseId, productId, product.centralStock, tx);
+}
+
+export async function resolveCentralWarehouseId(
+  warehouseId: string,
+  tx: Prisma.TransactionClient
+): Promise<string> {
+  const wh = await tx.warehouse.findUnique({ where: { id: warehouseId } });
+  if (!wh || wh.type !== "CENTRAL") return warehouseId;
+  const primary = await getCentralWarehouse(tx);
+  return primary.id;
 }
 
 export async function getCourierWarehouse(courierId: string, tx?: Prisma.TransactionClient) {
@@ -106,14 +195,16 @@ export async function applyStockDelta(
 }
 
 export async function migrateExistingStockToWarehouses() {
-  const central = await getCentralWarehouse();
+  const central = await ensureSingleCentralWarehouse();
 
   const products = await prisma.product.findMany({ where: { centralStock: { gt: 0 } } });
   for (const p of products) {
+    const existing = await getWarehouseStock(central.id, p.id);
+    const qty = Math.max(p.centralStock, existing?.quantity ?? 0);
     await prisma.warehouseStock.upsert({
       where: { warehouseId_productId: { warehouseId: central.id, productId: p.id } },
-      create: { warehouseId: central.id, productId: p.id, quantity: p.centralStock },
-      update: { quantity: p.centralStock },
+      create: { warehouseId: central.id, productId: p.id, quantity: qty },
+      update: { quantity: qty },
     });
   }
 
@@ -141,12 +232,19 @@ export async function syncCentralStockToWarehouse(
   const ws = await getWarehouseStock(central.id, productId, tx);
   const warehouseQty = ws?.quantity ?? 0;
 
-  if (warehouseQty === 0 && product.centralStock > 0) {
+  if (warehouseQty < product.centralStock) {
     await db.warehouseStock.upsert({
       where: { warehouseId_productId: { warehouseId: central.id, productId } },
       create: { warehouseId: central.id, productId, quantity: product.centralStock },
       update: { quantity: product.centralStock },
     });
+    if (tx) {
+      await syncLegacyStock(central.id, productId, product.centralStock, tx);
+    } else {
+      await prisma.$transaction(async (inner) => {
+        await syncLegacyStock(central.id, productId, product.centralStock, inner);
+      });
+    }
   }
 }
 
@@ -161,7 +259,7 @@ export async function getCentralAvailableQuantity(productId: string, tx?: Prisma
 }
 
 export async function ensureWarehouseStockMigrated() {
-  await getCentralWarehouse();
+  await ensureSingleCentralWarehouse();
   await migrateExistingStockToWarehouses();
 }
 
