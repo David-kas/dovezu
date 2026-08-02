@@ -157,7 +157,14 @@ export async function postDocumentInTransaction(
         }
         case "TRANSFER": {
           const available = await getStockQuantity(doc.fromWarehouseId!, productId, tx);
-          if (available < qty) throw new Error(`Недостаточно товара на складе-источнике`);
+          if (available < qty) {
+            const p = await tx.product.findUnique({ where: { id: productId }, select: { name: true, centralStock: true } });
+            throw new Error(
+              `Недостаточно «${p?.name ?? "товара"}» на центральном складе (учёт: ${available} шт.` +
+                (p && p.centralStock > available ? `, в карточке: ${p.centralStock} — нажмите «Синхронизировать склад» в разделе Передача или обновите страницу` : "") +
+                ")"
+            );
+          }
 
           await applyStockDelta(doc.fromWarehouseId!, productId, -qty, tx);
           await applyStockDelta(doc.toWarehouseId!, productId, qty, tx);

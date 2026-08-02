@@ -3,6 +3,8 @@ import type { DocumentType, Prisma, Role } from "@prisma/client";
 import {
   getCentralWarehouse,
   getCourierWarehouse,
+  syncCentralStockToWarehouse,
+  ensureWarehouseStockMigrated,
 } from "./inventory.service";
 import { postDocumentInTransaction } from "./document-posting.service";
 import { decimalToNumber } from "../utils";
@@ -83,6 +85,9 @@ export async function transferToCourierViaDocument(
     where: { id: courierId, role: "COURIER", courierStatus: "ACTIVE" },
   });
   if (!courier) throw new Error("Курьер не найден или заблокирован");
+
+  await ensureWarehouseStockMigrated();
+  await syncCentralStockToWarehouse(productId);
 
   const central = await getCentralWarehouse();
   const courierWarehouse = await getCourierWarehouse(courierId);

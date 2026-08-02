@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ScanLine, Send, Plus, ArrowLeft, ClipboardCheck } from "lucide-react";
@@ -15,11 +16,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarcodeScanner } from "@/components/warehouse/barcode-scanner";
 import { ReceiptUploader } from "@/components/warehouse/receipt-uploader";
 import { ReceiptMatchReview } from "@/components/warehouse/receipt-match-review";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
+
+const BarcodeScanner = dynamic(
+  () =>
+    import("@/components/warehouse/barcode-scanner").then((mod) => ({
+      default: mod.BarcodeScanner,
+    })),
+  { ssr: false }
+);
 
 interface DocLine {
   id: string;

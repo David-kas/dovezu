@@ -16,6 +16,8 @@ async function assertDocAccess(documentId: string, userId: string, role: Role) {
   return doc;
 }
 
+export const maxDuration = 60;
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

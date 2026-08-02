@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, jsonError, jsonSuccess } from "@/lib/api-auth";
 import { buildProductSearchWhere } from "@/lib/product-search";
 import { productSchema } from "@/lib/validations";
+import { getCentralWarehouse, ensureWarehouseStockMigrated } from "@/lib/services/inventory.service";
 
 export async function GET(req: NextRequest) {
   const { error, user } = await requireAuth(["ADMIN", "COURIER"]);
@@ -13,6 +14,10 @@ export async function GET(req: NextRequest) {
   const category = searchParams.get("category") || "";
   const status = searchParams.get("status") || "";
   const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10), 200);
+
+  if (user!.role === "ADMIN") {
+    await ensureWarehouseStockMigrated();
+  }
 
   const products = await prisma.product.findMany({
     where: {
@@ -27,12 +32,40 @@ export async function GET(req: NextRequest) {
     take: limit,
   });
 
-  const mapped = products.map((p) => ({
-    ...p,
-    purchasePrice: user!.role === "ADMIN" ? Number(p.purchasePrice) : undefined,
-    salePrice: Number(p.salePrice),
-    centralStock: user!.role === "ADMIN" ? p.centralStock : undefined,
-  }));
+  let centralWarehouseId: string | null = null;
+  if (user!.role === "ADMIN") {
+    centralWarehouseId = (await getCentralWarehouse()).id;
+  }
+
+  const stocks =
+    centralWarehouseId && products.length > 0
+      ? await prisma.warehouseStock.findMany({
+          where: {
+            warehouseId: centralWarehouseId,
+            productId: { in: products.map((p) => p.id) },
+          },
+        })
+      : [];
+  const stockByProduct = new Map(stocks.map((s) => [s.productId, s.quantity]));
+
+  const mapped = products.map((p) => {
+      const warehouseStock = stockByProduct.get(p.id) ?? 0;
+      const availableStock =
+        user!.role === "ADMIN"
+          ? warehouseStock > 0
+            ? warehouseStock
+            : p.centralStock
+          : undefined;
+
+      return {
+        ...p,
+        purchasePrice: user!.role === "ADMIN" ? Number(p.purchasePrice) : undefined,
+        salePrice: Number(p.salePrice),
+        centralStock: user!.role === "ADMIN" ? p.centralStock : undefined,
+        warehouseStock: user!.role === "ADMIN" ? warehouseStock : undefined,
+        availableStock,
+      };
+    });
 
   return jsonSuccess(mapped);
 }
@@ -62,6 +95,15 @@ export async function POST(req: NextRequest) {
       status: data.status,
     },
   });
+
+  if (data.centralStock > 0) {
+    const central = await getCentralWarehouse();
+    await prisma.warehouseStock.upsert({
+      where: { warehouseId_productId: { warehouseId: central.id, productId: product.id } },
+      create: { warehouseId: central.id, productId: product.id, quantity: data.centralStock },
+      update: { quantity: data.centralStock },
+    });
+  }
 
   return jsonSuccess(product, 201);
 }

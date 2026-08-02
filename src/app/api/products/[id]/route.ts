@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, jsonError, jsonSuccess } from "@/lib/api-auth";
+import { syncCentralStockToWarehouse, getCentralWarehouse } from "@/lib/services/inventory.service";
 import { productSchema } from "@/lib/validations";
 
 export async function GET(
@@ -51,6 +52,14 @@ export async function PUT(
       imageUrl: data.imageUrl || null,
       status: data.status,
     },
+  });
+
+  await syncCentralStockToWarehouse(id);
+  const central = await getCentralWarehouse();
+  await prisma.warehouseStock.upsert({
+    where: { warehouseId_productId: { warehouseId: central.id, productId: id } },
+    create: { warehouseId: central.id, productId: id, quantity: data.centralStock },
+    update: { quantity: data.centralStock },
   });
 
   return jsonSuccess(product);

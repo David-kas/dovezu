@@ -18,7 +18,13 @@ import { toast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/utils";
 
 interface Courier { id: string; name: string; courierStatus: string }
-interface Product { id: string; name: string; centralStock: number }
+interface Product {
+  id: string;
+  name: string;
+  centralStock?: number;
+  warehouseStock?: number;
+  availableStock?: number;
+}
 interface Movement {
   id: string;
   quantity: number;
@@ -55,6 +61,7 @@ export function TransfersPage() {
   }, []);
 
   const selectedProduct = products.find((p) => p.id === productId);
+  const available = selectedProduct?.availableStock ?? selectedProduct?.centralStock ?? 0;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -113,11 +120,13 @@ export function TransfersPage() {
                 <Select value={productId} onValueChange={setProductId} required>
                   <SelectTrigger><SelectValue placeholder="Выберите товар" /></SelectTrigger>
                   <SelectContent>
-                    {products.map((p) => (
+                    {products.map((p) => {
+                      const qty = p.availableStock ?? p.centralStock ?? 0;
+                      return (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name} (склад: {p.centralStock})
+                        {p.name} (склад: {qty})
                       </SelectItem>
-                    ))}
+                    );})}
                   </SelectContent>
                 </Select>
               </div>
@@ -126,14 +135,20 @@ export function TransfersPage() {
                 <Input
                   type="number"
                   min="1"
-                  max={selectedProduct?.centralStock || 9999}
+                  max={available || 9999}
                   value={quantity}
                   onChange={(e) => setQuantity(+e.target.value)}
                   required
                 />
                 {selectedProduct && (
                   <p className="text-xs text-muted-foreground">
-                    Доступно на складе: {selectedProduct.centralStock}
+                    Доступно на складе: {available}
+                    {(selectedProduct.warehouseStock ?? 0) === 0 &&
+                      (selectedProduct.centralStock ?? 0) > 0 && (
+                        <span className="block text-amber-600">
+                          Остаток синхронизирован с карточкой товара
+                        </span>
+                      )}
                   </p>
                 )}
               </div>

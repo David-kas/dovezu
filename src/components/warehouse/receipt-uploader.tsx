@@ -11,19 +11,60 @@ interface ReceiptUploaderProps {
   onUploaded: () => void;
 }
 
+/** Сжимает большие фото с телефона для лимита Vercel (~4 MB). */
+async function prepareUploadFile(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") && !file.name.match(/\.(jpe?g|png|webp|heic)$/i)) {
+    return file;
+  }
+  if (file.size <= 1.5 * 1024 * 1024) return file;
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxSide = 1600;
+    let { width, height } = bitmap;
+    if (width > maxSide || height > maxSide) {
+      if (width > height) {
+        height = Math.round((height * maxSide) / width);
+        width = maxSide;
+      } else {
+        width = Math.round((width * maxSide) / height);
+        height = maxSide;
+      }
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.82)
+    );
+    if (!blob || blob.size >= file.size) return file;
+
+    const base = file.name.replace(/\.[^.]+$/, "") || "receipt";
+    return new File([blob], `${base}.jpg`, { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
+
 export function ReceiptUploader({ documentId, onUploaded }: ReceiptUploaderProps) {
   const [uploading, setUploading] = useState(false);
-  const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
   const pdfRef = useRef<HTMLInputElement>(null);
 
   async function uploadFile(file: File, pageNumber = 1) {
     setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("pageNumber", String(pageNumber));
-
     try {
+      const prepared = await prepareUploadFile(file);
+      const formData = new FormData();
+      formData.append("file", prepared);
+      formData.append("pageNumber", String(pageNumber));
+
       const res = await fetch(`/api/documents/${documentId}/attachments`, {
         method: "POST",
         body: formData,
@@ -31,7 +72,7 @@ export function ReceiptUploader({ documentId, onUploaded }: ReceiptUploaderProps
       const data = await res.json();
 
       if (!res.ok) {
-        toast({ title: "Ошибка", description: data.error, variant: "destructive" });
+        toast({ title: "Ошибка", description: data.error || "Не удалось загрузить", variant: "destructive" });
         return;
       }
 
@@ -47,6 +88,8 @@ export function ReceiptUploader({ documentId, onUploaded }: ReceiptUploaderProps
         });
       }
       onUploaded();
+    } catch {
+      toast({ title: "Ошибка сети", description: "Проверьте интернет и попробуйте снова", variant: "destructive" });
     } finally {
       setUploading(false);
     }
@@ -55,7 +98,11 @@ export function ReceiptUploader({ documentId, onUploaded }: ReceiptUploaderProps
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files?.length) return;
-    Array.from(files).forEach((f, i) => uploadFile(f, i + 1));
+    void (async () => {
+      for (let i = 0; i < files.length; i++) {
+        await uploadFile(files[i]!, i + 1);
+      }
+    })();
     e.target.value = "";
   }
 

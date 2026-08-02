@@ -128,6 +128,43 @@ export async function migrateExistingStockToWarehouses() {
   }
 }
 
+/** Если в WarehouseStock 0, а в legacy centralStock есть остаток — переносим (после миграции v3). */
+export async function syncCentralStockToWarehouse(
+  productId: string,
+  tx?: Prisma.TransactionClient
+) {
+  const db = tx ?? prisma;
+  const central = await getCentralWarehouse(tx);
+  const product = await db.product.findUnique({ where: { id: productId } });
+  if (!product) return;
+
+  const ws = await getWarehouseStock(central.id, productId, tx);
+  const warehouseQty = ws?.quantity ?? 0;
+
+  if (warehouseQty === 0 && product.centralStock > 0) {
+    await db.warehouseStock.upsert({
+      where: { warehouseId_productId: { warehouseId: central.id, productId } },
+      create: { warehouseId: central.id, productId, quantity: product.centralStock },
+      update: { quantity: product.centralStock },
+    });
+  }
+}
+
+export async function getCentralAvailableQuantity(productId: string, tx?: Prisma.TransactionClient) {
+  await syncCentralStockToWarehouse(productId, tx);
+  const central = await getCentralWarehouse(tx);
+  const qty = await getStockQuantity(central.id, productId, tx);
+  if (qty > 0) return qty;
+
+  const product = await (tx ?? prisma).product.findUnique({ where: { id: productId } });
+  return product?.centralStock ?? 0;
+}
+
+export async function ensureWarehouseStockMigrated() {
+  await getCentralWarehouse();
+  await migrateExistingStockToWarehouses();
+}
+
 export async function listLowStockProducts(warehouseId?: string) {
   const where = warehouseId ? { warehouseId } : {};
   const stocks = await prisma.warehouseStock.findMany({

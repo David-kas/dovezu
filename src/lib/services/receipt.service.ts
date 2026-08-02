@@ -1,7 +1,7 @@
 import { prisma } from "../prisma";
 import type { MatchConfidence, Prisma, DocumentStatus, PaymentMethod } from "@prisma/client";
 import { processReceiptFile, type OcrLineItem, type OcrReceiptResult } from "./receipt-ocr.service";
-import { saveReceiptFileSafe } from "./receipt-storage.service";
+import { saveReceiptFileSafe, normalizeMimeType } from "./receipt-storage.service";
 import { findProductByAlias, normalizeReceiptText, saveAlias } from "./receipt-matching.service";
 import { sumDocumentLines, checkReceiptDiscrepancy } from "./costing.service";
 import { logActivity } from "./audit.service";
@@ -109,31 +109,39 @@ export async function uploadAndProcessReceipt(
   userRole: Role,
   pageNumber?: number
 ) {
+  const doc = await prisma.stockDocument.findUnique({ where: { id: documentId } });
+  if (!doc) throw new Error("Документ не найден");
+  if (doc.status === "POSTED" || doc.status === "CANCELLED") {
+    throw new Error("Документ нельзя изменить");
+  }
+
+  const normalizedMime = normalizeMimeType(mimeType, fileName);
+
+  const { fileUrl, fileName: savedName } = await saveReceiptFileSafe(
+    documentId,
+    fileBuffer,
+    fileName,
+    normalizedMime
+  );
+
+  const ocr = await processReceiptFile(fileBuffer, normalizedMime);
+
   return prisma.$transaction(async (tx) => {
-    const doc = await tx.stockDocument.findUnique({ where: { id: documentId } });
-    if (!doc) throw new Error("Документ не найден");
-    if (doc.status === "POSTED" || doc.status === "CANCELLED") {
+    const docLocked = await tx.stockDocument.findUnique({ where: { id: documentId } });
+    if (!docLocked) throw new Error("Документ не найден");
+    if (docLocked.status === "POSTED" || docLocked.status === "CANCELLED") {
       throw new Error("Документ нельзя изменить");
     }
-
-    const { fileUrl, fileName: savedName } = await saveReceiptFileSafe(
-      documentId,
-      fileBuffer,
-      fileName,
-      mimeType
-    );
 
     await tx.documentAttachment.create({
       data: {
         documentId,
         fileName: savedName,
         fileUrl,
-        mimeType,
+        mimeType: normalizedMime,
         pageNumber: pageNumber ?? 1,
       },
     });
-
-    const ocr = await processReceiptFile(fileBuffer, mimeType);
 
     await tx.receiptOcrResult.create({
       data: {
@@ -149,7 +157,7 @@ export async function uploadAndProcessReceipt(
       },
     });
 
-    let supplierId = doc.supplierId;
+    let supplierId = docLocked.supplierId;
     const supplier = await findOrCreateSupplierByOcr(ocr);
     if (supplier) supplierId = supplier.id;
 
