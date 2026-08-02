@@ -18,7 +18,7 @@ interface DashboardData {
   pendingReviewCount?: number;
   lowStockCount?: number;
   error?: string;
-  _degraded?: boolean;
+  purchasingUnavailable?: boolean;
 }
 
 export function AdminDashboard() {
@@ -71,9 +71,10 @@ export function AdminDashboard() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Дашборд</h1>
         <p className="text-muted-foreground mt-1">Обзор ключевых показателей</p>
-        {data._degraded && (
+        {data.purchasingUnavailable && (
           <p className="text-sm text-amber-600 mt-2">
-            Часть данных о закупках недоступна — проверьте миграцию БД (migrate-v3).
+            Данные о закупках недоступны — выполните в Supabase SQL из{" "}
+            <code className="text-xs">migrate-all.sql</code> и <code className="text-xs">migrate-v3.sql</code>.
           </p>
         )}
       </div>

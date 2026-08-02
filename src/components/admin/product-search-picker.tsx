@@ -55,6 +55,7 @@ export function ProductSearchPicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const debouncedQuery = useDebouncedValue(query, 200);
+  const fetchSeq = useRef(0);
 
   const focusSearch = useCallback(() => {
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -65,23 +66,39 @@ export function ProductSearchPicker({
   }, [autoFocus, focusSearch]);
 
   useEffect(() => {
+    const q = debouncedQuery.trim();
+    if (q.length < 2) {
+      setProducts([]);
+      setLoading(false);
+      setHighlightIdx(0);
+      setScrollTop(0);
+      return;
+    }
+
+    const seq = ++fetchSeq.current;
     let cancelled = false;
+
     async function search() {
       setLoading(true);
-      const params = new URLSearchParams({ status: "ACTIVE", limit: "100" });
-      if (debouncedQuery.trim()) params.set("search", debouncedQuery.trim());
+      const params = new URLSearchParams({ status: "ACTIVE", limit: "100", search: q });
 
-      const res = await fetch(`/api/products?${params}`);
-      const data: SearchProduct[] = await res.json();
-      if (!cancelled) {
+      try {
+        const res = await fetch(`/api/products?${params}`);
+        const json = await res.json();
+        if (cancelled || seq !== fetchSeq.current) return;
+
+        const data = Array.isArray(json) ? json : [];
         setProducts(data.filter((p) => !excludeIds.includes(p.id)));
         setHighlightIdx(0);
         setScrollTop(0);
-        setLoading(false);
+      } finally {
+        if (!cancelled && seq === fetchSeq.current) setLoading(false);
       }
     }
     search();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [debouncedQuery, excludeIds]);
 
   function handleSelect(product: SearchProduct) {
@@ -121,7 +138,7 @@ export function ProductSearchPicker({
         <Input
           ref={inputRef}
           className="pl-9"
-          placeholder="Поиск по названию, артикулу, SKU, штрихкоду или ID..."
+          placeholder="Поиск: минимум 2 символа (название, артикул, штрихкод)..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -141,7 +158,7 @@ export function ProductSearchPicker({
           </div>
         ) : products.length === 0 ? (
           <div className="flex items-center justify-center h-[52px] text-sm text-muted-foreground">
-            {query.trim() ? "Товары не найдены" : "Введите запрос для поиска"}
+            {query.trim().length >= 2 ? "Товары не найдены" : "Введите минимум 2 символа для поиска"}
           </div>
         ) : (
           <div style={{ height: totalHeight, position: "relative" }}>

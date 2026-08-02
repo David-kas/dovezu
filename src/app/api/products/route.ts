@@ -6,7 +6,7 @@ import { productSchema } from "@/lib/validations";
 import { getCentralWarehouse, ensureWarehouseStockMigrated } from "@/lib/services/inventory.service";
 
 export async function GET(req: NextRequest) {
-  const { error, user } = await requireAuth(["ADMIN", "COURIER"]);
+  const { error, user } = await requireAuth(["ADMIN", "COURIER", "OPERATOR"]);
   if (error) return error;
 
   const { searchParams } = new URL(req.url);
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status") || "";
   const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10), 200);
 
-  if (user!.role === "ADMIN") {
+  if (user!.role === "ADMIN" || user!.role === "OPERATOR") {
     await ensureWarehouseStockMigrated();
   }
 
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   });
 
   let centralWarehouseId: string | null = null;
-  if (user!.role === "ADMIN") {
+  if (user!.role === "ADMIN" || user!.role === "OPERATOR") {
     centralWarehouseId = (await getCentralWarehouse()).id;
   }
 
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
   const mapped = products.map((p) => {
       const warehouseStock = stockByProduct.get(p.id) ?? 0;
       const availableStock =
-        user!.role === "ADMIN"
+        user!.role === "ADMIN" || user!.role === "OPERATOR"
           ? warehouseStock > 0
             ? warehouseStock
             : p.centralStock
@@ -59,10 +59,15 @@ export async function GET(req: NextRequest) {
 
       return {
         ...p,
-        purchasePrice: user!.role === "ADMIN" ? Number(p.purchasePrice) : undefined,
+        purchasePrice:
+          user!.role === "ADMIN" || user!.role === "OPERATOR"
+            ? Number(p.purchasePrice)
+            : undefined,
         salePrice: Number(p.salePrice),
-        centralStock: user!.role === "ADMIN" ? p.centralStock : undefined,
-        warehouseStock: user!.role === "ADMIN" ? warehouseStock : undefined,
+        centralStock:
+          user!.role === "ADMIN" || user!.role === "OPERATOR" ? p.centralStock : undefined,
+        warehouseStock:
+          user!.role === "ADMIN" || user!.role === "OPERATOR" ? warehouseStock : undefined,
         availableStock,
       };
     });

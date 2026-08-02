@@ -16,34 +16,73 @@ export async function getDashboardStats() {
     pendingReviewCount: 0,
     lowStock: [] as { productId: string }[],
   };
+  let purchasingUnavailable = false;
 
   try {
     purchasing = await getPurchasingAnalytics();
   } catch (e) {
+    purchasingUnavailable = true;
     console.error("getPurchasingAnalytics failed:", e);
   }
 
-  const [products, couriers, orders, todayOrders, monthOrders] = await Promise.all([
-    prisma.product.findMany({ where: { status: "ACTIVE" } }),
-    prisma.user.count({ where: { role: "COURIER", courierStatus: "ACTIVE" } }),
-    prisma.order.count(),
-    prisma.order.findMany({
-      where: {
-        status: "COMPLETED",
-        completedAt: { gte: todayStart, lte: todayEnd },
-      },
-      include: { items: true },
-    }),
-    prisma.order.findMany({
-      where: {
-        status: "COMPLETED",
-        completedAt: { gte: monthStart },
-      },
-      include: { items: true },
-    }),
-  ]);
+  let products: { centralStock: number }[] = [];
+  let couriers = 0;
+  let orders = 0;
+  type CompletedOrder = Awaited<
+    ReturnType<
+      typeof prisma.order.findMany<{
+        include: { items: true };
+      }>
+    >
+  >[number];
+  let todayOrders: CompletedOrder[] = [];
+  let monthOrders: CompletedOrder[] = [];
 
-  const totalCentralStock = products.reduce((sum, p) => sum + p.centralStock, 0);
+  try {
+    [products, couriers, orders, todayOrders, monthOrders] = await Promise.all([
+      prisma.product.findMany({ where: { status: "ACTIVE" }, select: { centralStock: true } }),
+      prisma.user
+        .count({ where: { role: "COURIER", courierStatus: "ACTIVE" } })
+        .catch(() => prisma.user.count({ where: { role: "COURIER" } })),
+      prisma.order.count(),
+      prisma.order.findMany({
+        where: {
+          status: "COMPLETED",
+          completedAt: { gte: todayStart, lte: todayEnd },
+        },
+        include: { items: true },
+      }),
+      prisma.order.findMany({
+        where: {
+          status: "COMPLETED",
+          completedAt: { gte: monthStart },
+        },
+        include: { items: true },
+      }),
+    ]);
+  } catch (e) {
+    console.error("getDashboardStats core queries failed:", e);
+    try {
+      orders = await prisma.order.count();
+    } catch {
+      /* ignore */
+    }
+    try {
+      products = await prisma.product.findMany({
+        where: { status: "ACTIVE" },
+        select: { centralStock: true },
+      });
+    } catch {
+      /* ignore */
+    }
+    try {
+      couriers = await prisma.user.count({ where: { role: "COURIER" } });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const totalCentralStock = products.reduce((sum, p) => sum + (p.centralStock ?? 0), 0);
 
   const calcProfit = (ordersList: typeof todayOrders) =>
     ordersList.reduce((sum, order) => {
@@ -69,9 +108,10 @@ export async function getDashboardStats() {
     todaySales: todayRevenue,
     todayProfit,
     monthProfit,
-    monthPurchaseTotal: purchasing.monthPurchaseTotal,
-    pendingReviewCount: purchasing.pendingReviewCount,
-    lowStockCount: purchasing.lowStock.length,
+    monthPurchaseTotal: purchasing.monthPurchaseTotal ?? 0,
+    pendingReviewCount: purchasing.pendingReviewCount ?? 0,
+    lowStockCount: purchasing.lowStock?.length ?? 0,
+    purchasingUnavailable,
   };
 }
 
